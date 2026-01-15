@@ -152,35 +152,70 @@ void RBPDatabase::parse_file(const std::string &filename)
     if (line == "Dihedral Coeffs")  { section = RBPDB_DIHEDRAL; continue; }
 
     if (section == RBPDB_NONE) {
-      std::string msg =
-        "Coefficient line encountered in rbp database-file \"" + filename +
-        "\" before any section header "
-        "(Bond Coeffs / Angle Coeffs / Dihedral Coeffs)";
-      error->all(FLERR, msg.c_str());
+      continue;
+      // std::string msg =
+      //   "Coefficient line encountered in rbp database-file \"" + filename +
+      //   "\" before any section header "
+      //   "(Bond Coeffs / Angle Coeffs / Dihedral Coeffs)";
+      // error->all(FLERR, msg.c_str());
     }
-
-    int expected = (section == RBPDB_BOND) ? 27 :
-                   (section == RBPDB_ANGLE || section == RBPDB_DIHEDRAL) ? 48 : 0;
 
     int id = 0;
     RBPCoeffs *target = nullptr;
 
+    // first token: the id
+    ValueTokenizer values(line);
     try {
-      ValueTokenizer values(line);
       id = values.next_int();
-
-      if (section == RBPDB_BOND)      { target = &bond_db[id];     seen_bond[id] = 1; }
-      if (section == RBPDB_ANGLE)     { target = &angle_db[id];    seen_angle[id] = 1; }
-      if (section == RBPDB_DIHEDRAL)  { target = &dihedral_db[id]; seen_dihedral[id] = 1; }
-
-      target->coeffs.resize(expected);
-      for (int i = 0; i < expected; i++) {
-        target->coeffs[i] = values.next_double();
-      }
-
     } catch (TokenizerException &e) {
-      error->all(FLERR, "Incorrect number of coefficients in database entry");
+      std::string msg =
+        "Malformed database entry in rbp database-file:\n " + filename +
+        "\nSection: " + std::string(section_name(section)) +
+        "\nLine expected to start with integer. Encountered:\n" + line + "\n";
+      error->all(FLERR, msg.c_str());
     }
+
+    if (section == RBPDB_BOND)      { target = &bond_db[id];     seen_bond[id] = 1; }
+    if (section == RBPDB_ANGLE)     { target = &angle_db[id];    seen_angle[id] = 1; }
+    if (section == RBPDB_DIHEDRAL)  { target = &dihedral_db[id]; seen_dihedral[id] = 1; }
+
+    // remaining tokens: arbitrary number of doubles
+    while (values.has_next()) {
+      std::string tok = values.next_string();
+      try {
+        double val = std::stod(tok);
+        target->coeffs.push_back(val);
+      } catch (...) {
+        std::string msg =
+          "Non-numeric coefficient '" + tok + "' in rbp database-file:\n " + filename +
+          "\nSection: " + std::string(section_name(section)) +
+          "\nLine: " + line + "\n";
+        error->all(FLERR, msg.c_str());
+      }
+    }
+
+    // int expected = (section == RBPDB_BOND) ? 27 :
+    //                (section == RBPDB_ANGLE || section == RBPDB_DIHEDRAL) ? 48 : 0;
+
+    // int id = 0;
+    // RBPCoeffs *target = nullptr;
+
+    // try {
+    //   ValueTokenizer values(line);
+    //   id = values.next_int();
+
+    //   if (section == RBPDB_BOND)      { target = &bond_db[id];     seen_bond[id] = 1; }
+    //   if (section == RBPDB_ANGLE)     { target = &angle_db[id];    seen_angle[id] = 1; }
+    //   if (section == RBPDB_DIHEDRAL)  { target = &dihedral_db[id]; seen_dihedral[id] = 1; }
+
+    //   target->coeffs.resize(expected);
+    //   for (int i = 0; i < expected; i++) {
+    //     target->coeffs[i] = values.next_double();
+    //   }
+
+    // } catch (TokenizerException &e) {
+    //   error->all(FLERR, "Incorrect number of coefficients in database entry");
+    // }
   }
 
   // --------------------------------------------

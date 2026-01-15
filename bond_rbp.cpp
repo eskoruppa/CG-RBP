@@ -356,10 +356,9 @@ double BondRBP::equilibrium_distance(int bond_type)
 ------------------------------------------------------------------------- */
 
 void BondRBP::write_restart(FILE *fp) {
-  // - Loop over nbondtypes
-  // - Write 36 values for Mmat[type][6][6]
-  // - Write 12 values for ss[type] (3x3 rotation + 3 translation)
-  // - Use fwrite for binary output
+
+  fwrite(&params[1], sizeof(RBPParams), atom->nbondtypes, fp);
+
 }
 
 /* ----------------------------------------------------------------------
@@ -367,10 +366,29 @@ void BondRBP::write_restart(FILE *fp) {
 ------------------------------------------------------------------------- */
 
 void BondRBP::read_restart(FILE *fp) {
-  // - Allocate Mmat and ss if not already done
-  // - Read 36 values for Mmat[type]
-  // - Read 12 values for ss[type]
-  // - Optional: validate input and sanity-check matrix
+
+  allocate();
+
+  if (comm->me == 0) {
+    utils::sfread(FLERR,
+                  &params[1],
+                  sizeof(RBPParams),
+                  atom->nbondtypes,
+                  fp,
+                  nullptr,
+                  error);
+  }
+
+  // broadcast the whole params block to all ranks
+  MPI_Bcast(&params[1],
+            atom->nbondtypes * static_cast<int>(sizeof(RBPParams)),
+            MPI_BYTE,
+            0,
+            world);
+
+  // mark all types as having coefficients
+  for (int i = 1; i <= atom->nbondtypes; i++) setflag[i] = 1;
+
 }
 
 /* ----------------------------------------------------------------------
@@ -378,10 +396,25 @@ void BondRBP::read_restart(FILE *fp) {
 ------------------------------------------------------------------------- */
 
 void BondRBP::write_data(FILE *fp) {
-  // - Loop over all bond types
-  // - Write bond_coeff line: 21 M values + 6 SE(3) values
-  // - Match the format expected by coeff()
-  // - Use fprintf for clean output formatting
+
+  for (int i = 1; i <= atom->nbondtypes; i++) {
+    if (!setflag[i]) continue;
+
+    // type index
+    fprintf(fp, "%d", i);
+
+    // 6 ground-state components (Ystatic)
+    for (int k = 0; k < 6; k++)
+      fprintf(fp, " %g", params[i].Ystatic[k]);
+
+    // 21 upper-triangular stiffness components (Mmat)
+    for (int r = 0; r < 6; r++)
+      for (int c = r; c < 6; c++)
+        fprintf(fp, " %g", params[i].Mmat[r][c]);
+
+    fprintf(fp, "\n");
+  }
+
 }
 
 /* ----------------------------------------------------------------------
@@ -470,9 +503,10 @@ void BondRBP::assign_coeffs(int bond_type, const std::vector<double> &args) {
   set_lower_triangle_(bond_type);
   assign_blocks_(bond_type);
 
-  if (!lamath::is_positive_definite(params[bond_type].Mmat))
+  if (!lamath::is_positive_definite(params[bond_type].Mmat)) {
     error->all(FLERR, "Stiffness matrix M is not positive definite");
-
+  }
+  
   setflag[bond_type] = 1;
 }
 
