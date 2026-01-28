@@ -26,11 +26,11 @@ action () {
   fi
 }
 
-# the CG-DNA package cannot be used without
+# the CG-RBP package cannot be used without
 # the MOLECULE and ASPHERE packages installed.
 
 if (test $1 = 1) then
-  if (test ! -e ../bond_rbp.cpp) then
+  if (test ! -e ../atom_vec_molecular.cpp) then
     echo "Must install MOLECULE package with CG-RBP"
     exit 1
   fi
@@ -41,15 +41,26 @@ if (test $1 = 1) then
 fi
 
 
-# list of files with dependcies
+# list of files with dependencies
 
-action  bond_rbp.cpp
-action  bond_rbp.h
-action  bond_rbp_fene.cpp
-action  bond_rbp_fene.h
-action  so3.h
-action  lamath.h
-action  angle_rbp.cpp
-action  angle_rbp.h
-action  so3.h
-action  so3.h
+# Header files (no dependencies)
+action so3.h
+action lamath.h
+
+# Bond styles
+action bond_rbp.cpp
+action bond_rbp.h
+action bond_rbp_fene.cpp
+action bond_rbp_fene.h
+
+# Angle styles
+action angle_rbp.cpp
+action angle_rbp.h
+
+# Dihedral styles
+action dihedral_rbp.cpp
+action dihedral_rbp.h
+
+# Parser utilities
+action parse_rbp.cpp
+action parse_rbp.h
