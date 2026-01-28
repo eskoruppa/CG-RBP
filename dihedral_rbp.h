@@ -32,6 +32,8 @@ DihedralStyle(rbp,DihedralRBP);
 
 namespace LAMMPS_NS {
 
+static constexpr const char* RBPDIHEDRAL_STYLE = "rbp";
+
 class DihedralRBP : public Dihedral {
  public:
   // DihedralRBP(class LAMMPS *, int, char **);

@@ -94,8 +94,7 @@ void BondRBP::compute(int eflag, int vflag) {
   int nbondlist = neighbor->nbondlist;
   int nlocal = atom->nlocal;
   int newton_bond = force->newton_bond;
-
-  // @Oliver: Can you confirm that this is safe to use with hybrid bond style? Will bondlist only contain the bonds of this bond style?  
+ 
   for (int bid = 0; bid < nbondlist; bid++) {
     id1 = bondlist[bid][0];
     id2 = bondlist[bid][1];
@@ -185,33 +184,33 @@ void BondRBP::compute(int eflag, int vflag) {
     lamath::mul(T1,tmp,tau1lab);
     lamath::mul(T1,tau_pure,tau2lab);
 
-    ///////////////////////////////////////////////////////////////
-    ///////////////////////////////////////////////////////////////
-    // DEBUG CODE 
-    double be = 0;
-    double Yv[6]; 
-    Yv[0] = Omd[0]; 
-    Yv[1] = Omd[1];
-    Yv[2] = Omd[2];
-    Yv[3] = wd[0];   
-    Yv[4] = wd[1];
-    Yv[5] = wd[2];
-    // Calculate energy: 0.5 * Y_vec^T * Mmat * Y_vec
-    for (int i_mat = 0; i_mat < 6; ++i_mat) { 
-      for (int j_mat = 0; j_mat < 6; ++j_mat) {
-        be += Yv[i_mat] * params[bond_type].Mmat[i_mat][j_mat] * Yv[j_mat];
-      }
-    }
-    be *= 0.5;
-    if (be > 24) {
-      error->warning(FLERR, "High elastic energy: {} {} {} {}", update->ntimestep, atom->tag[id1],
-        atom->tag[id2], be);
-        fprintf(screen," High elastic energy: %.3f\n",be);
-        fprintf(screen," %.4f %.4f %.4f\n",Omd[0],Omd[1],Omd[2]);
-        fprintf(screen," %.4f %.4f %.4f\n",wd[0],wd[1],wd[2]);
-      }
-    ///////////////////////////////////////////////////////////////
-    ///////////////////////////////////////////////////////////////
+    // ///////////////////////////////////////////////////////////////
+    // ///////////////////////////////////////////////////////////////
+    // // DEBUG CODE 
+    // double be = 0;
+    // double Yv[6]; 
+    // Yv[0] = Omd[0]; 
+    // Yv[1] = Omd[1];
+    // Yv[2] = Omd[2];
+    // Yv[3] = wd[0];   
+    // Yv[4] = wd[1];
+    // Yv[5] = wd[2];
+    // // Calculate energy: 0.5 * Y_vec^T * Mmat * Y_vec
+    // for (int i_mat = 0; i_mat < 6; ++i_mat) { 
+    //   for (int j_mat = 0; j_mat < 6; ++j_mat) {
+    //     be += Yv[i_mat] * params[bond_type].Mmat[i_mat][j_mat] * Yv[j_mat];
+    //   }
+    // }
+    // be *= 0.5;
+    // if (be > 24) {
+    //   error->warning(FLERR, "High elastic energy: {} {} {} {}", update->ntimestep, atom->tag[id1],
+    //     atom->tag[id2], be);
+    //     fprintf(screen," High elastic energy: %.3f\n",be);
+    //     fprintf(screen," %.4f %.4f %.4f\n",Omd[0],Omd[1],Omd[2]);
+    //     fprintf(screen," %.4f %.4f %.4f\n",wd[0],wd[1],wd[2]);
+    //   }
+    // ///////////////////////////////////////////////////////////////
+    // ///////////////////////////////////////////////////////////////
 
     ////////////////////////////////////////////
     ////////////////////////////////////////////
@@ -268,7 +267,6 @@ void BondRBP::compute(int eflag, int vflag) {
       // Call the base class's ev_tally_xyz function
       // Force on atom i (id1) from atom j (id2) is -Flab
       ev_tally_xyz(id1, id2, nlocal, newton_bond, bond_energy, 
-                    // -Flab[0], -Flab[1], -Flab[2], // Force on id1 from id2
                     Flab[0], Flab[1], Flab[2], // Force on id1 from id2
                     vir_delx, vir_dely, vir_delz);
     }
@@ -302,6 +300,13 @@ void BondRBP::coeff(int narg, char **arg)
 
     RBPDatabase db(lmp, error);
     db.read(arg[2]);
+    
+    // Validate that bond style in database matches this style
+    if (db.metadata().bond_style != RBPBOND_STYLE) {
+      error->all(FLERR, 
+        "Bond style mismatch: database specifies '" + db.metadata().bond_style + 
+        "' but using bond_style rbp");
+    }
 
     int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
     for (int bond_type=ilo;bond_type<=ihi;bond_type++) {

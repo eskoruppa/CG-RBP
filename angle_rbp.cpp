@@ -384,6 +384,13 @@ void AngleRBP::coeff(int narg, char **arg) {
 
     RBPDatabase db(lmp, error);
     db.read(arg[2]);
+    
+    // Validate that angle style in database matches this style
+    if (db.metadata().angle_style != RBPANGLE_STYLE) {
+      error->all(FLERR, 
+        "Angle style mismatch: database specifies '" + db.metadata().angle_style + 
+        "' but using angle_style rbp");
+    }
 
     int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
     for (int angle_type=ilo;angle_type<=ihi;angle_type++) {
@@ -433,10 +440,7 @@ double AngleRBP::equilibrium_angle(int angle_type)
 ------------------------------------------------------------------------- */
 
 void AngleRBP::write_restart(FILE *fp) {
-  // - Loop over nangletypes
-  // - Write 36 values for Mmat[type][6][6]
-  // - Write 12 values for ss[type] (3x3 rotation + 3 translation)
-  // - Use fwrite for binary output
+  fwrite(&params[1], sizeof(RBPParams), atom->nangletypes, fp);
 }
 
 /* ----------------------------------------------------------------------
@@ -444,10 +448,27 @@ void AngleRBP::write_restart(FILE *fp) {
 ------------------------------------------------------------------------- */
 
 void AngleRBP::read_restart(FILE *fp) {
-  // - Allocate Mmat and ss if not already done
-  // - Read 36 values for Mmat[type]
-  // - Read 12 values for ss[type]
-  // - Optional: validate input and sanity-check matrix
+  allocate();
+
+  if (comm->me == 0) {
+    utils::sfread(FLERR,
+                  &params[1],
+                  sizeof(RBPParams),
+                  atom->nangletypes,
+                  fp,
+                  nullptr,
+                  error);
+  }
+
+  // broadcast the whole params block to all ranks
+  MPI_Bcast(&params[1],
+            atom->nangletypes * static_cast<int>(sizeof(RBPParams)),
+            MPI_BYTE,
+            0,
+            world);
+
+  // mark all types as having coefficients
+  for (int i = 1; i <= atom->nangletypes; i++) setflag[i] = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -455,34 +476,31 @@ void AngleRBP::read_restart(FILE *fp) {
 ------------------------------------------------------------------------- */
 
 void AngleRBP::write_data(FILE *fp) {
-  // - Loop over all angle types
-  // - Write angle_coeff line: 21 M values + 6 SE(3) values
-  // - Match the format expected by coeff()
-  // - Use fprintf for clean output formatting
+  for (int i = 1; i <= atom->nangletypes; i++) {
+    if (!setflag[i]) continue;
+
+    // type index
+    fprintf(fp, "%d", i);
+
+    // 6 ground-state components (Ystatic1)
+    for (int k = 0; k < 6; k++)
+      fprintf(fp, " %g", params[i].Ystatic1[k]);
+
+    // 6 ground-state components (Ystatic2)
+    for (int k = 0; k < 6; k++)
+      fprintf(fp, " %g", params[i].Ystatic2[k]);
+
+    // 36 full stiffness matrix components (Mmat)
+    for (int r = 0; r < 6; r++)
+      for (int c = 0; c < 6; c++)
+        fprintf(fp, " %g", params[i].Mmat[r][c]);
+
+    fprintf(fp, "\n");
+  }
 }
 
-/* ----------------------------------------------------------------------
-   Allocate memory for internal data structures  //   // compute gamma
-  //   lamath::mul(params[angle_type].Mr,Omd,gamma);
-  //   lamath::mul(params[angle_type].Mtr_tr,wd,tmp);
-  //   gamma[0] += tmp[0];
-  //   gamma[1] += tmp[1];
-  //   gamma[2] += tmp[2];
-    
-  //   // compute mu
-  //   lamath::mul(params[angle_type].Mtr_bl,Omd,mu);
-  //   lamath::mul(params[angle_type].Mt,wd,tmp);
-  //   mu[0] += tmp[0];
-  //   mu[1] += tmp[1];
-  //   mu[2] += tmp[2];
-------------------------------------------------------------------------- */
 
 void AngleRBP::allocate() {
-  // - Allocate Mmat[nangletypes+1][6][6]
-  // - Allocate ss[nangletypes+1]
-  // - Initialize values to zero or identity where appropriate
-  // - Use LAMMPS memory->create interface
-
   allocated = 1;
   int n = atom->nangletypes;
 

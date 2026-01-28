@@ -397,6 +397,13 @@ void BondRBPFene::coeff(int narg, char **arg)
 
     RBPDatabase db(lmp, error);
     db.read(arg[2]);
+    
+    // Validate that bond style in database matches this style
+    if (db.metadata().bond_style != RBPBOND_FENE_STYLE) {
+      error->all(FLERR, 
+        "Bond style mismatch: database specifies '" + db.metadata().bond_style + 
+        "' but using bond_style rbp/fene");
+    }
 
     int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
     for (int bond_type=ilo;bond_type<=ihi;bond_type++) {
@@ -614,10 +621,12 @@ void BondRBPFene::assign_coeffs(int bond_type, const std::vector<double> &args) 
   // -------------------------------------------------------------------
   // set everything by assigning upper triangular coefficients
   if (narg == opt3) {
-    int k = 6;
-    for (int i = 0; i < 6; i++)
-    for (int j = i; j < 6; j++)
-    params[bond_type].Mmat[i][j] = args[argid++];
+    // int k = 6;
+    for (int i = 0; i < 6; i++) {
+      for (int j = i; j < 6; j++) {
+        params[bond_type].Mmat[i][j] = args[argid++];
+      }
+    }
   }
   
   

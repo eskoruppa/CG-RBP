@@ -32,6 +32,8 @@ AngleStyle(rbp,AngleRBP);
 
 namespace LAMMPS_NS {
 
+static constexpr const char* RBPANGLE_STYLE = "rbp";
+
 class AngleRBP : public Angle {
  public:
   // BondRBP(class LAMMPS *, int, char **);

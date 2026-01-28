@@ -37,6 +37,8 @@ BondStyle(rbp,BondRBP);
 
 namespace LAMMPS_NS {
 
+static constexpr const char* RBPBOND_STYLE = "rbp";
+
 class BondRBP : public Bond {
  public:
    // BondRBP(class LAMMPS *, int, char **);

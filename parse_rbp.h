@@ -30,6 +30,20 @@ struct RBPCoeffs {
   std::vector<double> coeffs;
 };
 
+struct RBPMetadata {
+  int num_bond_types;
+  int num_angle_types;
+  int num_dihedral_types;
+  int coupling_range;
+  std::string bond_style;      // e.g., "rbp" or "rbpfene"
+  std::string angle_style;     // e.g., "rbp"
+  std::string dihedral_style;  // e.g., "rbp"
+  
+  RBPMetadata() 
+    : num_bond_types(-1), num_angle_types(-1), num_dihedral_types(-1),
+      coupling_range(-1), bond_style(""), angle_style(""), dihedral_style("") {}
+};
+
 class RBPDatabase {
  public:
   RBPDatabase(LAMMPS *lmp, Error *error);
@@ -39,6 +53,8 @@ class RBPDatabase {
   const RBPCoeffs &bond(int id) const;
   const RBPCoeffs &angle(int id) const;
   const RBPCoeffs &dihedral(int id) const;
+  
+  const RBPMetadata &metadata() const { return db_metadata; }
 
   int max_bond_id() const { return bond_db.size() - 1; }
   int max_angle_id() const { return angle_db.size() - 1; }
@@ -52,6 +68,7 @@ class RBPDatabase {
   std::vector<RBPCoeffs> bond_db;
   std::vector<RBPCoeffs> angle_db;
   std::vector<RBPCoeffs> dihedral_db;
+  RBPMetadata db_metadata;
 
   void parse_file(const std::string &filename);
 };

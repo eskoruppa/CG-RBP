@@ -184,15 +184,9 @@ void DihedralRBP::compute(int eflag, int vflag) {
 
     // check for domain mismatch of special neighbor
     if (domain->minimum_image_check(dr_a[0],dr_a[1],dr_a[2])) {
-
-      fprintf(screen," dr_a too large!\n");
-      std::exit(0);
-      
       domain->minimum_image(dr_a[0],dr_a[1],dr_a[2]);
     }
     if (domain->minimum_image_check(dr_b[0],dr_b[1],dr_b[2])) {
-      fprintf(screen," dr_a too large!\n");
-      std::exit(0);
       domain->minimum_image(dr_b[0],dr_b[1],dr_b[2]);
     }
     
@@ -388,7 +382,6 @@ void DihedralRBP::compute(int eflag, int vflag) {
                vb2x, vb2y, vb2z,
                vb3x, vb3y, vb3z);
     }
-
   }
 }
 
@@ -412,6 +405,13 @@ void DihedralRBP::coeff(int narg, char **arg) {
 
     RBPDatabase db(lmp, error);
     db.read(arg[2]);
+    
+    // Validate that dihedral style in database matches this style
+    if (db.metadata().dihedral_style != RBPDIHEDRAL_STYLE) {
+      error->all(FLERR, 
+        "Dihedral style mismatch: database specifies '" + db.metadata().dihedral_style + 
+        "' but using dihedral_style rbp");
+    }
 
     int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
     for (int dihedral_type=ilo;dihedral_type<=ihi;dihedral_type++) {
@@ -457,10 +457,7 @@ void DihedralRBP::init_style() {
 ------------------------------------------------------------------------- */
 
 void DihedralRBP::write_restart(FILE *fp) {
-  // - Loop over ndihedraltypes
-  // - Write 36 values for Mmat[type][6][6]
-  // - Write 12 values for ss[type] (3x3 rotation + 3 translation)
-  // - Use fwrite for binary output
+  fwrite(&params[1], sizeof(RBPParams), atom->ndihedraltypes, fp);
 }
 
 /* ----------------------------------------------------------------------
@@ -468,10 +465,27 @@ void DihedralRBP::write_restart(FILE *fp) {
 ------------------------------------------------------------------------- */
 
 void DihedralRBP::read_restart(FILE *fp) {
-  // - Allocate Mmat and ss if not already done
-  // - Read 36 values for Mmat[type]
-  // - Read 12 values for ss[type]
-  // - Optional: validate input and sanity-check matrix
+  allocate();
+
+  if (comm->me == 0) {
+    utils::sfread(FLERR,
+                  &params[1],
+                  sizeof(RBPParams),
+                  atom->ndihedraltypes,
+                  fp,
+                  nullptr,
+                  error);
+  }
+
+  // broadcast the whole params block to all ranks
+  MPI_Bcast(&params[1],
+            atom->ndihedraltypes * static_cast<int>(sizeof(RBPParams)),
+            MPI_BYTE,
+            0,
+            world);
+
+  // mark all types as having coefficients
+  for (int i = 1; i <= atom->ndihedraltypes; i++) setflag[i] = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -479,34 +493,31 @@ void DihedralRBP::read_restart(FILE *fp) {
 ------------------------------------------------------------------------- */
 
 void DihedralRBP::write_data(FILE *fp) {
-  // - Loop over all dihedral types
-  // - Write dihedral_coeff line: 21 M values + 6 SE(3) values
-  // - Match the format expected by coeff()
-  // - Use fprintf for clean output formatting
+  for (int i = 1; i <= atom->ndihedraltypes; i++) {
+    if (!setflag[i]) continue;
+
+    // type index
+    fprintf(fp, "%d", i);
+
+    // 6 ground-state components (Ystatic1)
+    for (int k = 0; k < 6; k++)
+      fprintf(fp, " %g", params[i].Ystatic1[k]);
+
+    // 6 ground-state components (Ystatic2)
+    for (int k = 0; k < 6; k++)
+      fprintf(fp, " %g", params[i].Ystatic2[k]);
+
+    // 36 full stiffness matrix components (Mmat)
+    for (int r = 0; r < 6; r++)
+      for (int c = 0; c < 6; c++)
+        fprintf(fp, " %g", params[i].Mmat[r][c]);
+
+    fprintf(fp, "\n");
+  }
 }
 
-/* ----------------------------------------------------------------------
-   Allocate memory for internal data structures  //   // compute gamma
-  //   lamath::mul(params[dihedral_type].Mr,Omd,gamma);
-  //   lamath::mul(params[dihedral_type].Mtr_tr,wd,tmp);
-  //   gamma[0] += tmp[0];
-  //   gamma[1] += tmp[1];
-  //   gamma[2] += tmp[2];
-    
-  //   // compute mu
-  //   lamath::mul(params[dihedral_type].Mtr_bl,Omd,mu);
-  //   lamath::mul(params[dihedral_type].Mt,wd,tmp);
-  //   mu[0] += tmp[0];
-  //   mu[1] += tmp[1];
-  //   mu[2] += tmp[2];
-------------------------------------------------------------------------- */
 
 void DihedralRBP::allocate() {
-  // - Allocate Mmat[ndihedraltypes+1][6][6]
-  // - Allocate ss[ndihedraltypes+1]
-  // - Initialize values to zero or identity where appropriate
-  // - Use LAMMPS memory->create interface
-
   allocated = 1;
   int n = atom->ndihedraltypes;
 

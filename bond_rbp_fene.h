@@ -36,6 +36,8 @@ BondStyle(rbpfene,BondRBPFene);
 
 namespace LAMMPS_NS {
 
+static constexpr const char* RBPBOND_FENE_STYLE = "rbpfene";
+
 class BondRBPFene : public Bond {
  public:
    // BondRBPFene(class LAMMPS *, int, char **);
