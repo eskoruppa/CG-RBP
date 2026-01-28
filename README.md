@@ -1,5 +1,5 @@
-# REPO_TEMPLATE
-Template for repos
+# CG-RBP
+Lammps implementation of sequence-dependent coarse-grained rigid base pair model.
 
 Add Submodule
 ```console
