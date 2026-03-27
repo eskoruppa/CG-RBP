@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 /* ----------------------------------------------------------------------
-   Contributing author: Enrico Skoruppa (Physics of Life, TU Dresden, Dresden)
+   Contributing author: Enrico Skoruppa (School of Physics and Astronomy, University of Edinburgh, Edinburgh)
 ------------------------------------------------------------------------- */
 
 
@@ -24,7 +24,9 @@ AngleStyle(rbp,AngleRBP);
 #ifndef LMP_ANGLE_RBP_H
 #define LMP_ANGLE_RBP_H
 
-#define CHECK_TORQUE_BALANCE
+// clang-format off
+#define RBP_ANGLE_DEFAULT_SUBTRACT_GROUNDSTATE false
+// clang-format on
 
 #include "angle.h"
 #include "so3.h"
@@ -58,21 +60,22 @@ class AngleRBP : public Angle {
     double srot2[3];        // Static rotation
     double svec1[3];        // Static translation
     double svec2[3];        // Static translation
-    double Mmat[6][6];     // Stiffness matrix
+    double Mmat[6][6];      // Stiffness matrix
     double Mrr[3][3];       // rotational part of M
     double Mtt[3][3];       // translational part of M
-    double Mrt[3][3];   // bottom-left cross terms
-    double Mtr[3][3];   // top-right cross terms
-    double Mrr_tp[3][3];       // rotational part of M
-    double Mtt_tp[3][3];       // translational part of M
-    double Mrt_tp[3][3];   // bottom-left cross terms
-    double Mtr_tp[3][3];   // top-right cross terms
+    double Mrt[3][3];       // bottom-left cross terms
+    double Mtr[3][3];       // top-right cross terms
+    double Mrr_tp[3][3];    // rotational part of M
+    double Mtt_tp[3][3];    // translational part of M
+    double Mrt_tp[3][3];    // bottom-left cross terms
+    double Mtr_tp[3][3];    // top-right cross terms
+    bool   subtract_groundstate;
    //  double equidist;
   };
   RBPParams *params;  // indexed by bond type
   void allocate();
 
-  void assign_coeffs(int angle_type, const std::vector<double> &args);
+  void assign_coeffs(int angle_type, const std::vector<double> &args, bool subtract_groundstate = false);
 };
 
 }

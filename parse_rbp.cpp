@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 /* ----------------------------------------------------------------------
-   Contributing author: Enrico Skoruppa (Physics of Life, TU Dresden, Dresden)
+   Contributing author: Enrico Skoruppa (School of Physics and Astronomy, University of Edinburgh, Edinburgh)
 ------------------------------------------------------------------------- */
 
 
@@ -29,10 +29,10 @@ enum Section { RBPDB_NONE, RBPDB_BOND, RBPDB_ANGLE, RBPDB_DIHEDRAL };
 
 auto section_name = [](Section s) {
   switch (s) {
-    case RBPDB_BOND:     return "Bond Coeffs";
-    case RBPDB_ANGLE:    return "Angle Coeffs";
-    case RBPDB_DIHEDRAL: return "Dihedral Coeffs";
-    default:             return "Unknown section";
+    case RBPDB_BOND:     return RBP_SECTION_HEADER_BOND_COEFFS;
+    case RBPDB_ANGLE:    return RBP_SECTION_HEADER_ANGLE_COEFFS;
+    case RBPDB_DIHEDRAL: return RBP_SECTION_HEADER_DIHEDRAL_COEFFS;
+    default:             return RBP_SECTION_HEADER_UNKNOWN;
   }
 };
 
@@ -105,78 +105,70 @@ void RBPDatabase::parse_file(const std::string &filename)
 
   Section section = RBPDB_NONE;
   int max_bond = 0, max_angle = 0, max_dihedral = 0;
-  
-  // Variables to store metadata values (required)
-  int metadata_num_bond_types = -1;
-  int metadata_num_angle_types = -1;
-  int metadata_num_dihedral_types = -1;
-  int metadata_coupling_range = -1;
-  std::string metadata_bond_style = "";
-  std::string metadata_angle_style = "";
-  std::string metadata_dihedral_style = "";
-  
   bool found_metadata = false;
+  db_metadata = RBPMetadata();
+
+  // Presence flags for fields that have no integer sentinel
+  bool seen_subtract_groundstate = false;
+  bool seen_seqs_set             = false;
+  bool seen_seqs_centered        = false;
+  bool seen_closed               = false;
+  bool seen_unit_length          = false;
+  bool seen_unit_energy          = false;
 
   // --------------------------------
-  // First pass to determine max ids and extract metadata
+  // First pass: determine max ids and parse all metadata
   {
     char *cline = nullptr;
     while ((cline = reader.next_line(0))) {
       std::string line = strip(std::string(cline));
       if (line.empty()) continue;
 
-      // Check for metadata lines
+      // Metadata lines contain ':' and appear before any section header
       if (is_metadata_line(line)) {
         found_metadata = true;
         std::string key, value;
-        if (parse_metadata(line, key, value)) {
-          // Extract required metadata fields
-          if (key == "number of bond types") {
-            try {
-              metadata_num_bond_types = std::stoi(value);
-            } catch (...) {
-              error->warning(FLERR, "Failed to parse 'number of bond types' metadata");
-            }
-          }
-          else if (key == "number of angle types") {
-            try {
-              metadata_num_angle_types = std::stoi(value);
-            } catch (...) {
-              error->warning(FLERR, "Failed to parse 'number of angle types' metadata");
-            }
-          }
-          else if (key == "number of dihedral types") {
-            try {
-              metadata_num_dihedral_types = std::stoi(value);
-            } catch (...) {
-              error->warning(FLERR, "Failed to parse 'number of dihedral types' metadata");
-            }
-          }
-          else if (key == "coupling range") {
-            try {
-              metadata_coupling_range = std::stoi(value);
-            } catch (...) {
-              error->warning(FLERR, "Failed to parse 'coupling range' metadata");
-            }
-          }
-          else if (key == "bond style") {
-            metadata_bond_style = value;
-          }
-          else if (key == "angle style") {
-            metadata_angle_style = value;
-          }
-          else if (key == "dihedral style") {
-            metadata_dihedral_style = value;
-          }
-          // Skip other metadata fields (seqs set, seqs centered, chars per atom)
-        }
-        // Skip all metadata lines
+        if (!parse_metadata(line, key, value)) continue;
+
+        // Helpers scoped to (key, value) for clean error reporting
+        auto parse_int = [&](int &dest) {
+          try { dest = std::stoi(value); }
+          catch (...) { error->warning(FLERR, ("Failed to parse metadata field '" + key + "'").c_str()); }
+        };
+        auto parse_bool = [&](bool &dest) {
+          try { dest = std::stoi(value) != 0; }
+          catch (...) { error->warning(FLERR, ("Failed to parse metadata field '" + key + "'").c_str()); }
+        };
+        auto parse_double = [&](double &dest) {
+          try { dest = std::stod(value); }
+          catch (...) { error->warning(FLERR, ("Failed to parse metadata field '" + key + "'").c_str()); }
+        };
+
+        if      (key == RBP_META_IDENTIFIER_NUM_RIGID_BODIES)       parse_int(db_metadata.num_rigid_bodies);
+        else if (key == RBP_META_IDENTIFIER_COUPLING_RANGE)         parse_int(db_metadata.coupling_range);
+        else if (key == RBP_META_IDENTIFIER_NUM_BONDS)              parse_int(db_metadata.num_bonds);
+        else if (key == RBP_META_IDENTIFIER_NUM_ANGLES)             parse_int(db_metadata.num_angles);
+        else if (key == RBP_META_IDENTIFIER_NUM_DIHEDRALS)          parse_int(db_metadata.num_dihedrals);
+        else if (key == RBP_META_IDENTIFIER_NUM_BOND_TYPES)         parse_int(db_metadata.num_bond_types);
+        else if (key == RBP_META_IDENTIFIER_NUM_ANGLE_TYPES)        parse_int(db_metadata.num_angle_types);
+        else if (key == RBP_META_IDENTIFIER_NUM_DIHEDRAL_TYPES)     parse_int(db_metadata.num_dihedral_types);
+        else if (key == RBP_META_IDENTIFIER_CHARS_PER_ATOM)         parse_int(db_metadata.chars_per_atom);
+        else if (key == RBP_META_IDENTIFIER_BOND_STYLE)             db_metadata.bond_style = value;
+        else if (key == RBP_META_IDENTIFIER_ANGLE_STYLE)            db_metadata.angle_style = value;
+        else if (key == RBP_META_IDENTIFIER_DIHEDRAL_STYLE)         db_metadata.dihedral_style = value;
+        else if (key == RBP_META_IDENTIFIER_SUBTRACT_GROUNDSTATE)   { parse_bool(db_metadata.subtract_groundstate); seen_subtract_groundstate = true; }
+        else if (key == RBP_META_IDENTIFIER_SEQS_SET)               { parse_bool(db_metadata.seqs_set);             seen_seqs_set = true; }
+        else if (key == RBP_META_IDENTIFIER_SEQS_CENTERED)          { parse_bool(db_metadata.seqs_centered);        seen_seqs_centered = true; }
+        else if (key == RBP_META_IDENTIFIER_CLOSED)                 { parse_bool(db_metadata.closed);               seen_closed = true; }
+        else if (key == RBP_META_IDENTIFIER_UNIT_LENGTH)            { parse_double(db_metadata.unit_length);         seen_unit_length = true; }
+        else if (key == RBP_META_IDENTIFIER_UNIT_ENERGY)            { parse_double(db_metadata.unit_energy);         seen_unit_energy = true; }
+        // unknown keys are silently ignored to allow forward-compatible database files
         continue;
       }
 
-      if (line == "Bond Coeffs")      { section = RBPDB_BOND; continue; }
-      if (line == "Angle Coeffs")     { section = RBPDB_ANGLE; continue; }
-      if (line == "Dihedral Coeffs")  { section = RBPDB_DIHEDRAL; continue; }
+      if (line == RBP_SECTION_HEADER_BOND_COEFFS)      { section = RBPDB_BOND; continue; }
+      if (line == RBP_SECTION_HEADER_ANGLE_COEFFS)     { section = RBPDB_ANGLE; continue; }
+      if (line == RBP_SECTION_HEADER_DIHEDRAL_COEFFS)  { section = RBPDB_DIHEDRAL; continue; }
 
       int id = 0;
       try {
@@ -224,9 +216,9 @@ void RBPDatabase::parse_file(const std::string &filename)
     // Skip metadata lines
     if (is_metadata_line(line)) continue;
 
-    if (line == "Bond Coeffs")      { section = RBPDB_BOND; continue; }
-    if (line == "Angle Coeffs")     { section = RBPDB_ANGLE; continue; }
-    if (line == "Dihedral Coeffs")  { section = RBPDB_DIHEDRAL; continue; }
+    if (line == RBP_SECTION_HEADER_BOND_COEFFS)      { section = RBPDB_BOND; continue; }
+    if (line == RBP_SECTION_HEADER_ANGLE_COEFFS)     { section = RBPDB_ANGLE; continue; }
+    if (line == RBP_SECTION_HEADER_DIHEDRAL_COEFFS)  { section = RBPDB_DIHEDRAL; continue; }
 
     if (section == RBPDB_NONE) {
       continue;
@@ -279,65 +271,129 @@ void RBPDatabase::parse_file(const std::string &filename)
       error->all(FLERR, "Missing dihedral database ID");
   
   // ============================================
-  // VALIDATE AND STORE METADATA (mandatory)
+  // VALIDATE METADATA
+  // Each check is guarded by a preprocessor define in parse_rbp.h.
+  // Comment out the respective define to make a field optional.
   // ============================================
-  
-  if (!found_metadata) {
-    error->all(FLERR, "Metadata section is mandatory in rbp database-file:\n " + filename +
-               "\nExpected metadata lines with format: key: value");
-  }
-  
-  // Validate required metadata fields
-  if (metadata_num_bond_types < 0) {
-    error->all(FLERR, "Missing required metadata 'number of bond types' in rbp database-file:\n " + filename);
-  }
-  if (metadata_num_angle_types < 0) {
-    error->all(FLERR, "Missing required metadata 'number of angle types' in rbp database-file:\n " + filename);
-  }
-  if (metadata_num_dihedral_types < 0) {
-    error->all(FLERR, "Missing required metadata 'number of dihedral types' in rbp database-file:\n " + filename);
-  }
-  if (metadata_bond_style.empty()) {
-    error->all(FLERR, "Missing required metadata 'bond style' in rbp database-file:\n " + filename);
-  }
-  if (metadata_angle_style.empty()) {
-    error->all(FLERR, "Missing required metadata 'angle style' in rbp database-file:\n " + filename);
-  }
-  if (metadata_dihedral_style.empty()) {
-    error->all(FLERR, "Missing required metadata 'dihedral style' in rbp database-file:\n " + filename);
-  }
-  
-  // Validate type counts match actual data
-  if (metadata_num_bond_types != max_bond) {
+
+  #ifdef RBP_META_REQUIRE_METADATA_SECTION
+    if (!found_metadata)
+      error->all(FLERR, "Metadata section is mandatory in rbp database-file:\n " + filename +
+                "\nExpected metadata lines with format: key: value");
+  #endif
+
+    // Integer count fields
+  #ifdef RBP_META_REQUIRE_NUM_RIGID_BODIES
+    if (db_metadata.num_rigid_bodies < 0)
+      error->all(FLERR, "Missing required metadata 'number of rigid bodies' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_COUPLING_RANGE
+    if (db_metadata.coupling_range < 0)
+      error->all(FLERR, "Missing required metadata 'coupling range' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_NUM_BONDS
+    if (db_metadata.num_bonds < 0)
+      error->all(FLERR, "Missing required metadata 'number of bonds' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_NUM_ANGLES
+    if (db_metadata.num_angles < 0)
+      error->all(FLERR, "Missing required metadata 'number of angles' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_NUM_DIHEDRALS
+    if (db_metadata.num_dihedrals < 0)
+      error->all(FLERR, "Missing required metadata 'number of dihedrals' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_NUM_BOND_TYPES
+    if (db_metadata.num_bond_types < 0)
+      error->all(FLERR, "Missing required metadata 'number of bond types' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_NUM_ANGLE_TYPES
+    if (db_metadata.num_angle_types < 0)
+      error->all(FLERR, "Missing required metadata 'number of angle types' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_NUM_DIHEDRAL_TYPES
+    if (db_metadata.num_dihedral_types < 0)
+      error->all(FLERR, "Missing required metadata 'number of dihedral types' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_CHARS_PER_ATOM
+    if (db_metadata.chars_per_atom < 0)
+      error->all(FLERR, "Missing required metadata 'chars per atom' in rbp database-file:\n " + filename);
+  #endif
+
+    // Style string fields
+  #ifdef RBP_META_REQUIRE_BOND_STYLE
+    if (db_metadata.bond_style.empty())
+      error->all(FLERR, "Missing required metadata 'bond style' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_ANGLE_STYLE
+    if (db_metadata.angle_style.empty())
+      error->all(FLERR, "Missing required metadata 'angle style' in rbp database-file:\n " + filename);
+  #endif
+  #ifdef RBP_META_REQUIRE_DIHEDRAL_STYLE
+    if (db_metadata.dihedral_style.empty())
+      error->all(FLERR, "Missing required metadata 'dihedral style' in rbp database-file:\n " + filename);
+  #endif
+
+    // Boolean flag fields
+  #ifdef RBP_META_REQUIRE_SUBTRACT_GROUNDSTATE
+    if (!seen_subtract_groundstate)
+      error->all(FLERR, "Missing required metadata 'subtract groundstate' in rbp database-file:\n " + filename);
+  #else
+    if (!seen_subtract_groundstate) db_metadata.subtract_groundstate = RBP_META_DEFAULT_SUBTRACT_GROUNDSTATE;
+  #endif
+  #ifdef RBP_META_REQUIRE_SEQS_SET
+    if (!seen_seqs_set)
+      error->all(FLERR, "Missing required metadata 'seqs set' in rbp database-file:\n " + filename);
+  #else
+    if (!seen_seqs_set) db_metadata.seqs_set = RBP_META_DEFAULT_SEQS_SET;
+  #endif
+  #ifdef RBP_META_REQUIRE_SEQS_CENTERED
+    if (!seen_seqs_centered)
+      error->all(FLERR, "Missing required metadata 'seqs centered' in rbp database-file:\n " + filename);
+  #else
+    if (!seen_seqs_centered) db_metadata.seqs_centered = RBP_META_DEFAULT_SEQS_CENTERED;
+  #endif
+  #ifdef RBP_META_REQUIRE_CLOSED
+    if (!seen_closed)
+      error->all(FLERR, "Missing required metadata 'closed' in rbp database-file:\n " + filename);
+  #else
+    if (!seen_closed) db_metadata.closed = RBP_META_DEFAULT_CLOSED;
+  #endif
+
+    // Double fields
+  #ifdef RBP_META_REQUIRE_UNIT_LENGTH
+    if (!seen_unit_length)
+      error->all(FLERR, "Missing required metadata 'unit length' in rbp database-file:\n " + filename);
+  #else
+    if (!seen_unit_length) db_metadata.unit_length = RBP_META_DEFAULT_UNIT_LENGTH;
+  #endif
+  #ifdef RBP_META_REQUIRE_UNIT_ENERGY
+    if (!seen_unit_energy)
+      error->all(FLERR, "Missing required metadata 'unit energy' in rbp database-file:\n " + filename);
+  #else
+    if (!seen_unit_energy) db_metadata.unit_energy = RBP_META_DEFAULT_UNIT_ENERGY;
+  #endif
+
+  // Validate type counts against actual data (always run when the field was present)
+  if (db_metadata.num_bond_types >= 0 && db_metadata.num_bond_types != max_bond) {
     std::string msg =
       "Inconsistent bond type count in rbp database-file:\n " + filename +
-      "\nMetadata specifies " + std::to_string(metadata_num_bond_types) +
+      "\nMetadata specifies " + std::to_string(db_metadata.num_bond_types) +
       " bond types, but found " + std::to_string(max_bond) + " in Bond Coeffs section.";
     error->all(FLERR, msg.c_str());
   }
-  
-  if (metadata_num_angle_types != max_angle) {
+  if (db_metadata.num_angle_types >= 0 && db_metadata.num_angle_types != max_angle) {
     std::string msg =
       "Inconsistent angle type count in rbp database-file:\n " + filename +
-      "\nMetadata specifies " + std::to_string(metadata_num_angle_types) +
+      "\nMetadata specifies " + std::to_string(db_metadata.num_angle_types) +
       " angle types, but found " + std::to_string(max_angle) + " in Angle Coeffs section.";
     error->all(FLERR, msg.c_str());
   }
-  
-  if (metadata_num_dihedral_types != max_dihedral) {
+  if (db_metadata.num_dihedral_types >= 0 && db_metadata.num_dihedral_types != max_dihedral) {
     std::string msg =
       "Inconsistent dihedral type count in rbp database-file:\n " + filename +
-      "\nMetadata specifies " + std::to_string(metadata_num_dihedral_types) +
+      "\nMetadata specifies " + std::to_string(db_metadata.num_dihedral_types) +
       " dihedral types, but found " + std::to_string(max_dihedral) + " in Dihedral Coeffs section.";
     error->all(FLERR, msg.c_str());
   }
-  
-  // Store metadata in the database
-  db_metadata.num_bond_types = metadata_num_bond_types;
-  db_metadata.num_angle_types = metadata_num_angle_types;
-  db_metadata.num_dihedral_types = metadata_num_dihedral_types;
-  db_metadata.coupling_range = metadata_coupling_range;
-  db_metadata.bond_style = metadata_bond_style;
-  db_metadata.angle_style = metadata_angle_style;
-  db_metadata.dihedral_style = metadata_dihedral_style;
 }

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 /* ----------------------------------------------------------------------
-   Contributing author: Enrico Skoruppa (Physics of Life, TU Dresden, Dresden)
+   Contributing author: Enrico Skoruppa (School of Physics and Astronomy, University of Edinburgh, Edinburgh)
 ------------------------------------------------------------------------- */
 
 
@@ -24,7 +24,10 @@ DihedralStyle(rbp,DihedralRBP);
 #ifndef LMP_DIHEDRAL_RBP_H
 #define LMP_DIHEDRAL_RBP_H
 
-#define CHECK_TORQUE_BALANCE
+// clang-format off
+#define RBP_DIHEDRAL_DEFAULT_SUBTRACT_GROUNDSTATE false
+#define RBP_DIHEDRAL_USE_CUSTOM_EV_TALLY
+// clang-format on
 
 #include "dihedral.h"
 #include "so3.h"
@@ -49,30 +52,39 @@ class DihedralRBP : public Dihedral {
   void write_data(FILE *) override;
 
  protected:
-  struct RBPParams {
-    double Ystatic1[6];     // Static wrench
-    double Ystatic2[6];     // Static wrench
-    double Smat1[3][3];     // Static rotation
-    double Smat2[3][3];     // Static rotation
-    double srot1[3];        // Static rotation
-    double srot2[3];        // Static rotation
-    double svec1[3];        // Static translation
-    double svec2[3];        // Static translation
-    double Mmat[6][6];      // Stiffness matrix
-    double Mrr[3][3];       // rotational part of M
-    double Mtt[3][3];       // translational part of M
-    double Mrt[3][3];       // top-right cross terms
-    double Mtr[3][3];       // bottom-left cross terms
-    double Mrr_tp[3][3];    // transpose of Mrr
-    double Mtt_tp[3][3];    // transpose of Mtt
-    double Mrt_tp[3][3];    // transpose of Mrt
-    double Mtr_tp[3][3];    // transpose of Mtr
-   //  double equidist;
-  };
-  RBPParams *params;  // indexed by bond type
-  void allocate();
+   struct RBPParams {
+      double Ystatic1[6];     // Static wrench
+      double Ystatic2[6];     // Static wrench
+      double Smat1[3][3];     // Static rotation
+      double Smat2[3][3];     // Static rotation
+      double srot1[3];        // Static rotation
+      double srot2[3];        // Static rotation
+      double svec1[3];        // Static translation
+      double svec2[3];        // Static translation
+      double Mmat[6][6];      // Stiffness matrix
+      double Mrr[3][3];       // rotational part of M
+      double Mtt[3][3];       // translational part of M
+      double Mrt[3][3];       // top-right cross terms
+      double Mtr[3][3];       // bottom-left cross terms
+      double Mrr_tp[3][3];    // transpose of Mrr
+      double Mtt_tp[3][3];    // transpose of Mtt
+      double Mrt_tp[3][3];    // transpose of Mrt
+      double Mtr_tp[3][3];    // transpose of Mtr
+      bool   subtract_groundstate;
+      //  double equidist;
+   };
+   RBPParams *params;  // indexed by bond type
+   void allocate();
 
-  void assign_coeffs(int angle_type, const std::vector<double> &args);
+   void assign_coeffs(int angle_type, const std::vector<double> &args, bool subtract_groundstate = false);
+   void ev_tally_rbp(int i1, int i2, int i3, int i4, int nlocal, int newton_bond,
+                double edihedral, const double *force_1, const double *force_3,
+                const double *dr_a, const double *dr_b, const double *dr32);
+
+   void verify_ev_tally(int i1, int i2, int i3, int i4, int nlocal, int newton_bond,
+                        double edihedral, const double *force_1, const double *force_2,
+                        const double *force_3, const double *force_4, const double *dr_a, 
+                        const double *dr_b, const double *dr32);
 };
 
 }

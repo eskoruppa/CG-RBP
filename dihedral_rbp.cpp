@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 /* ----------------------------------------------------------------------
-   Contributing author: Enrico Skoruppa (Physics of Life, TU Dresden, Dresden)
+   Contributing author: Enrico Skoruppa (School of Physics and Astronomy, University of Edinburgh, Edinburgh)
 ------------------------------------------------------------------------- */
 
 #include "dihedral_rbp.h"
@@ -56,9 +56,7 @@ DihedralRBP::~DihedralRBP() {
    Compute forces and energy contribution for all dihedrals of this style
 ------------------------------------------------------------------------- */
 
-
 void DihedralRBP::compute(int eflag, int vflag) {
-
 
   int id1,id2,id3,id4;
   int dihedral_type;
@@ -79,33 +77,25 @@ void DihedralRBP::compute(int eflag, int vflag) {
   // Rotation variables
   double *quat1,*quat2,*quat3,*quat4;
   double T1[3][3],T2[3][3],T3[3][3],T4[3][3];
-  double T1tp[3][3],T3tp[3][3];
-
+  
   double R_a[3][3],R_b[3][3];
   double Om_a[3],Om_b[3];
   double Omd_a[3],Omd_b[3];
   double Jinvtp_a[3][3];
   double Jinvtp_b[3][3];
-
+  
   // Translation variables
   double r1[3],r2[3],r3[3],r4[3];
   double dr_a[3],dr_b[3];
   double w_a[3],w_b[3];
   double wd_a[3],wd_b[3];
-
+  
+  double A[3], B[3], C[3], D[3];
+  double torque_1[3], torque_2[3], torque_3[3], torque_4[3];
+  double force_1[3], force_2[3], force_3[3], force_4[3];
+  
   // temp
   double tmp1[3],tmp2[3],tmp3[3];
-
-  // wrench components
-  double gamma_a[3];
-  double gamma_b[3];
-  double mu_a[3];
-  double mu_b[3];
-
-  // torques
-  double tau1[3],tau2[3],tau3[3],tau4[3];
-  // forces
-  double f1[3],f2[3],f3[3],f4[3];
   
   ev_init(eflag, vflag);
   
@@ -117,10 +107,10 @@ void DihedralRBP::compute(int eflag, int vflag) {
     id4 = dihedrallist[did][3];
     dihedral_type = dihedrallist[did][4];
 
-    // fprintf(screen,"DihedralRBP %d %d %d\n",id1,id2,id3);
-    
-    ////////////////////////////////////////
-    // Rotational Part
+    //-------------------------------------------------------------//
+    // Compute triads and positions
+    //-------------------------------------------------------------//
+
     // get quaternions
     quat1=bonus[ellipsoid[id1]].quat;
     quat2=bonus[ellipsoid[id2]].quat;
@@ -132,33 +122,11 @@ void DihedralRBP::compute(int eflag, int vflag) {
     MathExtra::quat_to_mat(quat2, T2);
     MathExtra::quat_to_mat(quat3, T3);
     MathExtra::quat_to_mat(quat4, T4);
-    
-    // compute transposed
-    lamath::transpose(T1,T1tp);
-    lamath::transpose(T3,T3tp);
-    
+
     // compute R
-    lamath::mul(T1tp,T2,R_a);
-    lamath::mul(T3tp,T4,R_b);
-    
-    // compute Omega_1
-    so3::rotmat2euler(R_a,Om_a);
-    so3::rotmat2euler(R_b,Om_b);
-    
-    // compute Omega_Delta
-    Omd_a[0] = Om_a[0] - params[dihedral_type].srot1[0];
-    Omd_a[1] = Om_a[1] - params[dihedral_type].srot1[1];
-    Omd_a[2] = Om_a[2] - params[dihedral_type].srot1[2];
-    Omd_b[0] = Om_b[0] - params[dihedral_type].srot2[0];
-    Omd_b[1] = Om_b[1] - params[dihedral_type].srot2[1];
-    Omd_b[2] = Om_b[2] - params[dihedral_type].srot2[2];
-    
-    // compute transposed inverse left Jacobian
-    so3::leftJacobianInverseTransposed(Om_a,Jinvtp_a);
-    so3::leftJacobianInverseTransposed(Om_b,Jinvtp_b);
-    
-    ////////////////////////////////////////
-    // Translational Part
+    lamath::mul_AtB(T1,T2,R_a);
+    lamath::mul_AtB(T3,T4,R_b);
+
     // get positions
     r1[0] = x[id1][0];
     r1[1] = x[id1][1];
@@ -173,214 +141,293 @@ void DihedralRBP::compute(int eflag, int vflag) {
     r4[1] = x[id4][1];
     r4[2] = x[id4][2];
 
-    // compute w
-    dr_a[0] = r2[0] - r1[0]; 
-    dr_a[1] = r2[1] - r1[1]; 
-    dr_a[2] = r2[2] - r1[2]; 
-    dr_b[0] = r4[0] - r3[0]; 
-    dr_b[1] = r4[1] - r3[1]; 
-    dr_b[2] = r4[2] - r3[2]; 
-
-
+    // compute dr_a and dr_b
+    lamath::subtract(r2,r1,dr_a);
+    lamath::subtract(r4,r3,dr_b);
     // check for domain mismatch of special neighbor
     if (domain->minimum_image_check(dr_a[0],dr_a[1],dr_a[2])) {
-      domain->minimum_image(dr_a[0],dr_a[1],dr_a[2]);
+      domain->minimum_image(FLERR,dr_a[0],dr_a[1],dr_a[2]);
     }
     if (domain->minimum_image_check(dr_b[0],dr_b[1],dr_b[2])) {
-      domain->minimum_image(dr_b[0],dr_b[1],dr_b[2]);
+      domain->minimum_image(FLERR,dr_b[0],dr_b[1],dr_b[2]);
     }
-    
-    // fprintf(screen," Terminated\n");
-    // std::exit(0);
 
-    lamath::mul(T1tp,dr_a,w_a);
-    lamath::mul(T3tp,dr_b,w_b);
-  
-    // compute w_Delta
-    wd_a[0] = w_a[0] - params[dihedral_type].svec1[0];
-    wd_a[1] = w_a[1] - params[dihedral_type].svec1[1];
-    wd_a[2] = w_a[2] - params[dihedral_type].svec1[2];
-    wd_b[0] = w_b[0] - params[dihedral_type].svec2[0];
-    wd_b[1] = w_b[1] - params[dihedral_type].svec2[1];
-    wd_b[2] = w_b[2] - params[dihedral_type].svec2[2];
+    // compute w_a and w_b
+    lamath::mul_Atx(T1,dr_a,w_a);
+    lamath::mul_Atx(T3,dr_b,w_b);
 
-    //////////////////////////////////////////////////////
-    // Compute gamma and mu
+    if (params[dihedral_type].subtract_groundstate) {
+      //-------------------------------------------------------------//
+      // Compute force wrench for se(3) (X) convention
+      //-------------------------------------------------------------//
 
-    // gamma1
-    lamath::mul(params[dihedral_type].Mrr,Omd_b,tmp1);
-    lamath::mul(params[dihedral_type].Mrt,wd_b,tmp2);
-    lamath::add(tmp1,tmp2,gamma_a);
-    // gamma1[0] = tmp1[0] + tmp2[0];
-    // gamma1[1] = tmp1[1] + tmp2[1];
-    // gamma1[2] = tmp1[2] + tmp2[2];
+      // compute Omega_a and Omega_b
+      so3::rotmat2euler(R_a,Om_a);
+      so3::rotmat2euler(R_b,Om_b);
 
-    // mu1
-    lamath::mul(params[dihedral_type].Mtr,Omd_b,tmp1);
-    lamath::mul(params[dihedral_type].Mtt,wd_b,tmp2);
-    lamath::add(tmp1,tmp2,mu_a);
-    // mu1[0] = tmp1[0] + tmp2[0];
-    // mu1[1] = tmp1[1] + tmp2[1];
-    // mu1[2] = tmp1[2] + tmp2[2];
+      // compute Omega_delta (Omega_d = Omega - Omega_s)
+      lamath::subtract(Om_a,params[dihedral_type].srot1,Omd_a);
+      lamath::subtract(Om_b,params[dihedral_type].srot2,Omd_b);
 
-    // gamma2
-    lamath::mul(params[dihedral_type].Mrr_tp,Omd_a,tmp1);
-    lamath::mul(params[dihedral_type].Mtr_tp,wd_a,tmp2);
-    lamath::add(tmp1,tmp2,gamma_b);
-    // gamma2[0] = tmp1[0] + tmp2[0];
-    // gamma2[1] = tmp1[1] + tmp2[1];
-    // gamma2[2] = tmp1[2] + tmp2[2];
+      // compute w_delta (w_d = w - w_s)
+      lamath::subtract(w_a,params[dihedral_type].svec1,wd_a);
+      lamath::subtract(w_b,params[dihedral_type].svec2,wd_b);
 
-    // mu1
-    lamath::mul(params[dihedral_type].Mrt_tp,Omd_a,tmp1);
-    lamath::mul(params[dihedral_type].Mtt_tp,wd_a,tmp2);
-    lamath::add(tmp1,tmp2,mu_b);
-    // mu2[0] = tmp1[0] + tmp2[0];
-    // mu2[1] = tmp1[1] + tmp2[1];
-    // mu2[2] = tmp1[2] + tmp2[2];
+      // compute partial E / partial Omega_Delta,a (A)
+      lamath::mul(params[dihedral_type].Mrr,Omd_b,tmp1);
+      lamath::mul(params[dihedral_type].Mrt,wd_b,tmp2);
+      lamath::add(tmp1,tmp2,A);
 
-    // Triad 1 ////////
-    // tau1 
-    MathExtra::cross3(w_a,mu_a,tmp1);
-    lamath::mul(Jinvtp_a,gamma_a,tmp2);
-    lamath::add(tmp1,tmp2,tmp3);
-    lamath::mul(T1,tmp3,tau1);
-    // f1
-    lamath::mul(T1,mu_a,f1);
-    
-    // Triad 2 ////////
-    // tau2
-    lamath::mul(T1,tmp2,tmp3);
-    lamath::signflip(tmp3,tau2);
-    
-    // f2
-    lamath::mul(T1,mu_a,tmp3);
-    lamath::signflip(tmp3,f2);
-    
-    // Triad 3 ////////
-    // tau3 
-    MathExtra::cross3(w_b,mu_b,tmp1);
-    lamath::mul(Jinvtp_b,gamma_b,tmp2);
-    lamath::add(tmp1,tmp2,tmp3);
-    lamath::mul(T3,tmp3,tau3);
-    // f3
-    lamath::mul(T3,mu_b,f3);
+      // compute partial E / partial w_Delta,a (B)
+      lamath::mul(params[dihedral_type].Mtt,wd_b,tmp1);
+      lamath::mul(params[dihedral_type].Mtr,Omd_b,tmp2);
+      lamath::add(tmp1,tmp2,B);
 
-    // Triad 4 ////////
-    // tau4
-    lamath::mul(T3,tmp2,tmp3);
-    lamath::signflip(tmp3,tau4);
-    
-    // f4
-    lamath::mul(T3,mu_b,tmp3);
-    lamath::signflip(tmp3,f4);
-    
-    ////////////////////////////////////////////
-    ////////////////////////////////////////////
+      // compute partial E / partial Omega_Delta,b (C)
+      // lamath::mul(params[dihedral_type].Mrr_tp,Omd_a,tmp1);
+      // lamath::mul(params[dihedral_type].Mtr_tp,wd_a,tmp2);
+      lamath::mul_Atx(params[dihedral_type].Mrr,Omd_a,tmp1);
+      lamath::mul_Atx(params[dihedral_type].Mtr,wd_a,tmp2);
+      lamath::add(tmp1,tmp2,C);
 
-    // apply force and torque to each of 4 atoms
+      // compute partial E / partial w_Delta,b (D)
+      // lamath::mul(params[dihedral_type].Mrt_tp,Omd_a,tmp1);
+      // lamath::mul(params[dihedral_type].Mtt_tp,wd_a,tmp2);
+      lamath::mul_Atx(params[dihedral_type].Mrt,Omd_a,tmp1);
+      lamath::mul_Atx(params[dihedral_type].Mtt,wd_a,tmp2);
+      lamath::add(tmp1,tmp2,D);
+
+      // compute transposed inverse left Jacobians
+      so3::leftJacobianInverseTransposed(Om_a,Jinvtp_a);
+      so3::leftJacobianInverseTransposed(Om_b,Jinvtp_b);
+
+      // force 1 and 2
+      lamath::mul(T1,B,force_1);
+      lamath::signflip(force_1,force_2);
+
+      // torques 1 and 2
+      lamath::mul(Jinvtp_a,A,tmp1);
+      MathExtra::cross3(w_a,B,tmp2);
+      lamath::add(tmp1,tmp2,tmp3);
+
+      lamath::mul(T1,tmp3,torque_1);
+      lamath::mul(T1,tmp1,tmp2);
+      lamath::signflip(tmp2,torque_2);
+
+      // force 2
+      lamath::mul(T3,D,force_3);
+      lamath::signflip(force_3,force_4);
+
+      // torques 3 and 4
+      lamath::mul(Jinvtp_b,C,tmp1);
+      MathExtra::cross3(w_b,D,tmp2);
+      lamath::add(tmp1,tmp2,tmp3);
+
+      lamath::mul(T3,tmp3,torque_3);
+      lamath::mul(T3,tmp1,tmp2);
+      lamath::signflip(tmp2,torque_4);
+
+      // lamath::print_mat3_lammps(screen, "Jinvtp_a", Jinvtp_a);
+      // lamath::print_mat3_lammps(screen, "Jinvtp_b", Jinvtp_b);
+
+    }
+    else {
+      //-------------------------------------------------------------//
+      // Compute force wrench for SE(3) (Y) convention
+      //-------------------------------------------------------------//
+
+      // compute Phi_delta_a (use Jinvtp_a for D_a and Omd_a for Phi_delta_a)
+      lamath::mul_AtB(params[dihedral_type].Smat1,R_a,Jinvtp_a);
+      so3::rotmat2euler(Jinvtp_a,Omd_a);
+      
+      // compute Phi_delta_b (use Jinvtp_b for D_b and Omd_b for Phi_delta_b)
+      lamath::mul_AtB(params[dihedral_type].Smat2,R_b,Jinvtp_b);
+      so3::rotmat2euler(Jinvtp_b,Omd_b);
+
+      // compute d_a (reuse wd_a for d_a)
+      lamath::subtract(w_a,params[dihedral_type].svec1,tmp1);
+      lamath::mul_Atx(params[dihedral_type].Smat1,tmp1,wd_a);
+
+      // compute d_b (reuse wd_b for d_b)
+      lamath::subtract(w_b,params[dihedral_type].svec2,tmp1);
+      lamath::mul_Atx(params[dihedral_type].Smat2,tmp1,wd_b);
+
+      // compute partial E / partial Phi_Delta,a (A)
+      lamath::mul(params[dihedral_type].Mrr,Omd_b,tmp1);
+      lamath::mul(params[dihedral_type].Mrt,wd_b,tmp2);
+      lamath::add(tmp1,tmp2,A);
+
+      // compute partial E / partial d_a (B)
+      lamath::mul(params[dihedral_type].Mtt,wd_b,tmp1);
+      lamath::mul(params[dihedral_type].Mtr,Omd_b,tmp2);
+      lamath::add(tmp1,tmp2,B);
+
+      // compute partial E / partial Phi_Delta,b (C)
+      // lamath::mul(params[dihedral_type].Mrr_tp,Omd_a,tmp1);
+      // lamath::mul(params[dihedral_type].Mtr_tp,wd_a,tmp2);
+      lamath::mul_Atx(params[dihedral_type].Mrr,Omd_a,tmp1);
+      lamath::mul_Atx(params[dihedral_type].Mtr,wd_a,tmp2);
+      lamath::add(tmp1,tmp2,C);
+
+      // compute partial E / partial d_b (D)
+      // lamath::mul(params[dihedral_type].Mrt_tp,Omd_a,tmp1);
+      // lamath::mul(params[dihedral_type].Mtt_tp,wd_a,tmp2);
+      lamath::mul_Atx(params[dihedral_type].Mrt,Omd_a,tmp1);
+      lamath::mul_Atx(params[dihedral_type].Mtt,wd_a,tmp2);
+      lamath::add(tmp1,tmp2,D);
+
+      // compute torque 2
+      so3::leftJacobianInverseTransposed(Omd_a,Jinvtp_a);
+      lamath::mul(Jinvtp_a,A,tmp1);
+      lamath::mul(params[dihedral_type].Smat1,tmp1,tmp2);
+      lamath::mul(T1,tmp2,tmp3);
+      lamath::signflip(tmp3,torque_2);
+      
+      // compute force 1 and force 2
+      lamath::mul(params[dihedral_type].Smat1,B,tmp1);
+      lamath::mul(T1,tmp1,force_1);
+      lamath::signflip(force_1,force_2);
+      
+      // compute torque 1
+      MathExtra::cross3(w_a,tmp1,tmp2);
+      lamath::mul(T1,tmp2,torque_1);
+      lamath::add_to(torque_1,tmp3);
+      
+      // compute torque 4
+      so3::leftJacobianInverseTransposed(Omd_b,Jinvtp_b);
+      lamath::mul(Jinvtp_b,C,tmp1);
+      lamath::mul(params[dihedral_type].Smat2,tmp1,tmp2);
+      lamath::mul(T3,tmp2,tmp3);
+      lamath::signflip(tmp3,torque_4);
+
+      // compute force 3 and force 4
+      lamath::mul(params[dihedral_type].Smat2,D,tmp1);
+      lamath::mul(T3,tmp1,force_3);
+      lamath::signflip(force_3,force_4);
+
+      // compute torque 3
+      MathExtra::cross3(w_b,tmp1,tmp2);
+      lamath::mul(T3,tmp2,torque_3);
+      lamath::add_to(torque_3,tmp3);
+
+      // lamath::print_mat3_lammps(screen, "Jinvtp_a", Jinvtp_a);
+      // lamath::print_mat3_lammps(screen, "Jinvtp_b", Jinvtp_b);
+
+    }
+
+    //-------------------------------------------------------------//
+    // Apply forces and torques to each atom
+    //-------------------------------------------------------------//
+
     if (newton_bond || id1 < nlocal) {
 
-      f[id1][0] += f1[0];
-      f[id1][1] += f1[1];
-      f[id1][2] += f1[2];
+      f[id1][0] += force_1[0];
+      f[id1][1] += force_1[1];
+      f[id1][2] += force_1[2];
 
-      torque[id1][0] += tau1[0];
-      torque[id1][1] += tau1[1];
-      torque[id1][2] += tau1[2];
+      torque[id1][0] += torque_1[0];
+      torque[id1][1] += torque_1[1];
+      torque[id1][2] += torque_1[2];
     }
 
     if (newton_bond || id2 < nlocal) {
 
-      f[id2][0] += f2[0];
-      f[id2][1] += f2[1];
-      f[id2][2] += f2[2];
+      f[id2][0] += force_2[0];
+      f[id2][1] += force_2[1];
+      f[id2][2] += force_2[2];
 
-      torque[id2][0] += tau2[0];
-      torque[id2][1] += tau2[1];
-      torque[id2][2] += tau2[2];
+      torque[id2][0] += torque_2[0];
+      torque[id2][1] += torque_2[1];
+      torque[id2][2] += torque_2[2];
     }
 
     if (newton_bond || id3 < nlocal) {
 
-      f[id3][0] += f3[0];
-      f[id3][1] += f3[1];
-      f[id3][2] += f3[2];
+      f[id3][0] += force_3[0];
+      f[id3][1] += force_3[1];
+      f[id3][2] += force_3[2];
 
-      torque[id3][0] += tau3[0];
-      torque[id3][1] += tau3[1];
-      torque[id3][2] += tau3[2];
+      torque[id3][0] += torque_3[0];
+      torque[id3][1] += torque_3[1];
+      torque[id3][2] += torque_3[2];
       
     }
 
     if (newton_bond || id4 < nlocal) {
 
-      f[id4][0] += f4[0];
-      f[id4][1] += f4[1];
-      f[id4][2] += f4[2];
+      f[id4][0] += force_4[0];
+      f[id4][1] += force_4[1];
+      f[id4][2] += force_4[2];
 
-      torque[id4][0] += tau4[0];
-      torque[id4][1] += tau4[1];
-      torque[id4][2] += tau4[2];
+      torque[id4][0] += torque_4[0];
+      torque[id4][1] += torque_4[1];
+      torque[id4][2] += torque_4[2];
       
     }
 
+    // // ---- DEBUG: verify ev_tally equivalence (delete this block when done) ----
+    // {
+    //   double dr32_dbg[3];
+    //   dr32_dbg[0] = x[id3][0] - x[id2][0];
+    //   dr32_dbg[1] = x[id3][1] - x[id2][1];
+    //   dr32_dbg[2] = x[id3][2] - x[id2][2];
+    //   if (domain->minimum_image_check(dr32_dbg[0], dr32_dbg[1], dr32_dbg[2]))
+    //     domain->minimum_image(FLERR, dr32_dbg[0], dr32_dbg[1], dr32_dbg[2]);
+
+    //   verify_ev_tally(id1, id2, id3, id4,
+    //                   nlocal, newton_bond,
+    //                   0.0,
+    //                   force_1, force_2, force_3, force_4,
+    //                   dr_a, dr_b, dr32_dbg);
+    // }
+    // // ---- END DEBUG ----
+
     if (evflag) {
 
+      //-------------------------------------------------------------//
+      // ev tally 
+      //-------------------------------------------------------------//
+    
       double dihedral_energy = 0.0;
-      double Yd1[6]; 
-      double Yd2[6]; 
-
-      Yd1[0] = Omd_a[0]; 
-      Yd1[1] = Omd_a[1];
-      Yd1[2] = Omd_a[2];
-      Yd1[3] = wd_a[0];   
-      Yd1[4] = wd_a[1];
-      Yd1[5] = wd_a[2];
-
-      Yd2[0] = Omd_b[0]; 
-      Yd2[1] = Omd_b[1];
-      Yd2[2] = Omd_b[2];
-      Yd2[3] = wd_b[0];   
-      Yd2[4] = wd_b[1];
-      Yd2[5] = wd_b[2];
-
-      // Calculate energy: 0.5 * Y_vec^T * Mmat * Y_vec
-      for (int i_mat = 0; i_mat < 6; ++i_mat) { 
+      const double Yd1[6] = {Omd_a[0], Omd_a[1], Omd_a[2], wd_a[0], wd_a[1], wd_a[2]};
+      const double Yd2[6] = {Omd_b[0], Omd_b[1], Omd_b[2], wd_b[0], wd_b[1], wd_b[2]};
+      for (int i_mat = 0; i_mat < 6; ++i_mat) {
         for (int j_mat = 0; j_mat < 6; ++j_mat) {
           dihedral_energy += Yd1[i_mat] * params[dihedral_type].Mmat[i_mat][j_mat] * Yd2[j_mat];
         }
       }
       dihedral_energy *= 0.5;
+      
+      #ifdef RBP_DIHEDRAL_USE_CUSTOM_EV_TALLY
+      double dr32[3];
+      dr32[0] = x[id3][0] - x[id2][0];
+      dr32[1] = x[id3][1] - x[id2][1];
+      dr32[2] = x[id3][2] - x[id2][2];
+      if (domain->minimum_image_check(dr32[0], dr32[1], dr32[2]))
+        domain->minimum_image(FLERR, dr32[0], dr32[1], dr32[2]);
 
-      // bond vectors for virial:
-      // vb1: 1 -> 2
-      // vb2: 3 -> 2
-      // vb3: 4 -> 3
-      double vb1x = x[id1][0] - x[id2][0];
-      double vb1y = x[id1][1] - x[id2][1];
-      double vb1z = x[id1][2] - x[id2][2];
-
+      ev_tally_rbp(id1, id2, id3, id4,
+                   nlocal, newton_bond,
+                   dihedral_energy,
+                   force_1, force_3,
+                   dr_a, dr_b, dr32);
+      #else
+      // vb2 = r3 - r2  (needs its own minimum image)
       double vb2x = x[id3][0] - x[id2][0];
       double vb2y = x[id3][1] - x[id2][1];
       double vb2z = x[id3][2] - x[id2][2];
+      if (domain->minimum_image_check(vb2x, vb2y, vb2z)) {
+          domain->minimum_image(FLERR, vb2x, vb2y, vb2z);
+      }
 
-      double vb3x = x[id4][0] - x[id3][0];
-      double vb3y = x[id4][1] - x[id3][1];
-      double vb3z = x[id4][2] - x[id3][2];
-
-      // Tally energy + virial.
-      // IMPORTANT: f1, f3, f4 must be the *net* forces on atoms id1, id3, id4
-      // from THIS dihedral.
       ev_tally(id1, id2, id3, id4,
-               nlocal, newton_bond,
-               dihedral_energy,
-               f1,   // force on atom id1
-               f3,   // force on atom id3
-               f4,   // force on atom id4
-               vb1x, vb1y, vb1z,
-               vb2x, vb2y, vb2z,
-               vb3x, vb3y, vb3z);
+              nlocal, newton_bond,
+              dihedral_energy,
+              force_1, force_3, force_4,
+              -dr_a[0], -dr_a[1], -dr_a[2],
+              vb2x, vb2y, vb2z,
+              dr_b[0], dr_b[1], dr_b[2]);
+      #endif
     }
   }
 }
@@ -415,7 +462,7 @@ void DihedralRBP::coeff(int narg, char **arg) {
 
     int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
     for (int dihedral_type=ilo;dihedral_type<=ihi;dihedral_type++) {
-      assign_coeffs(dihedral_type,db.dihedral(dbid++).coeffs);
+      assign_coeffs(dihedral_type,db.dihedral(dbid++).coeffs,db.metadata().subtract_groundstate);
     }
     return;
   }
@@ -428,7 +475,7 @@ void DihedralRBP::coeff(int narg, char **arg) {
     coeffs.push_back(val);
   }
   for (int dihedral_type=ilo;dihedral_type<=ihi;dihedral_type++) {
-    assign_coeffs(dihedral_type,coeffs);
+    assign_coeffs(dihedral_type,coeffs,RBP_DIHEDRAL_DEFAULT_SUBTRACT_GROUNDSTATE);
   }
 }
 
@@ -527,12 +574,14 @@ void DihedralRBP::allocate() {
 }
 
 
-void DihedralRBP::assign_coeffs(int dihedral_type, const std::vector<double> &args) {
+void DihedralRBP::assign_coeffs(int dihedral_type, const std::vector<double> &args, bool subtract_groundstate) {
 
 
   if (args.size() != 48) {
     error->all(FLERR, "Invalid number of coefficients found for dihedral style rbp. Requires 48 coefficients: X0_1 (6) X0_2 (6) stiffmat (6x6).");
   }
+
+  params[dihedral_type].subtract_groundstate = subtract_groundstate;
 
   // assign Ystatic
   for (int i=0;i<6;i++) {
@@ -573,11 +622,381 @@ void DihedralRBP::assign_coeffs(int dihedral_type, const std::vector<double> &ar
   lamath::transpose(params[dihedral_type].Mtr,params[dihedral_type].Mtr_tp);
   lamath::transpose(params[dihedral_type].Mrt,params[dihedral_type].Mrt_tp);
 
-  // THESE OFF-DIAGONAL COMPONENTS NEED NOT NECESSARILY BE POSITIVE DEFINITE!!!
-  // // check if matrix is positive definite
-  // if (!lamath::is_positive_definite(params[dihedral_type].Mmat)) {
-  //   error->all(FLERR, "Stiffness matrix M is not positive definite.");
-  // }
-
   setflag[dihedral_type] = 1;
+}
+
+
+void DihedralRBP::ev_tally_rbp(int i1, int i2, int i3, int i4,
+                                int nlocal, int newton_bond,
+                                double edihedral,
+                                const double *force_1, const double *force_3,
+                                const double *dr_a, const double *dr_b,
+                                const double *dr32)
+{
+  // Energy tallying (identical to standard)
+  if (eflag_either) {
+    if (eflag_global) {
+      if (newton_bond)
+        energy += edihedral;
+      else {
+        double eq = 0.25 * edihedral;
+        if (i1 < nlocal) energy += eq;
+        if (i2 < nlocal) energy += eq;
+        if (i3 < nlocal) energy += eq;
+        if (i4 < nlocal) energy += eq;
+      }
+    }
+    if (eflag_atom) {
+      double eq = 0.25 * edihedral;
+      if (newton_bond || i1 < nlocal) eatom[i1] += eq;
+      if (newton_bond || i2 < nlocal) eatom[i2] += eq;
+      if (newton_bond || i3 < nlocal) eatom[i3] += eq;
+      if (newton_bond || i4 < nlocal) eatom[i4] += eq;
+    }
+  }
+
+  if (vflag_either) {
+    // Virial: W = (r1-r2) ⊗ f1 + (r3-r4) ⊗ f3
+    //           = -dr_a ⊗ force_1 - dr_b ⊗ force_3
+    double v[6];
+    v[0] = -(dr_a[0]*force_1[0] + dr_b[0]*force_3[0]);
+    v[1] = -(dr_a[1]*force_1[1] + dr_b[1]*force_3[1]);
+    v[2] = -(dr_a[2]*force_1[2] + dr_b[2]*force_3[2]);
+    v[3] = -(dr_a[0]*force_1[1] + dr_b[0]*force_3[1]);
+    v[4] = -(dr_a[0]*force_1[2] + dr_b[0]*force_3[2]);
+    v[5] = -(dr_a[1]*force_1[2] + dr_b[1]*force_3[2]);
+
+    if (vflag_global) {
+      if (newton_bond) {
+        for (int i = 0; i < 6; i++) virial[i] += v[i];
+      } else {
+        double vq[6];
+        for (int i = 0; i < 6; i++) vq[i] = 0.25 * v[i];
+        if (i1 < nlocal) for (int i = 0; i < 6; i++) virial[i] += vq[i];
+        if (i2 < nlocal) for (int i = 0; i < 6; i++) virial[i] += vq[i];
+        if (i3 < nlocal) for (int i = 0; i < 6; i++) virial[i] += vq[i];
+        if (i4 < nlocal) for (int i = 0; i < 6; i++) virial[i] += vq[i];
+      }
+    }
+
+    if (vflag_atom) {
+      double vq[6];
+      for (int i = 0; i < 6; i++) vq[i] = 0.25 * v[i];
+      if (newton_bond || i1 < nlocal)
+        for (int i = 0; i < 6; i++) vatom[i1][i] += vq[i];
+      if (newton_bond || i2 < nlocal)
+        for (int i = 0; i < 6; i++) vatom[i2][i] += vq[i];
+      if (newton_bond || i3 < nlocal)
+        for (int i = 0; i < 6; i++) vatom[i3][i] += vq[i];
+      if (newton_bond || i4 < nlocal)
+        for (int i = 0; i < 6; i++) vatom[i4][i] += vq[i];
+    }
+  }
+
+  // Per-atom centroid virial: (r_a - r_centroid) ⊗ f_a
+  // Needs dr32 = minimum_image(r3 - r2) to locate all atoms relative to r2
+  if (cvflag_atom) {
+    // All positions relative to r2 (using minimum-image displacements)
+    double dr12[3], dr42[3];
+    for (int i = 0; i < 3; i++) {
+      dr12[i] = -dr_a[i];                  // r1 - r2
+      dr42[i] = dr32[i] + dr_b[i];         // r4 - r2 = (r3-r2) + (r4-r3)
+    }
+
+    // Centroid offset from r2: c = ((r1-r2) + 0 + (r3-r2) + (r4-r2)) / 4
+    double c[3];
+    for (int i = 0; i < 3; i++)
+      c[i] = 0.25 * (dr12[i] + dr32[i] + dr42[i]);
+
+    // r_a - r_centroid for each atom
+    double a1[3], a2[3], a3[3], a4[3];
+    for (int i = 0; i < 3; i++) {
+      a1[i] = dr12[i] - c[i];
+      a2[i] =         - c[i];
+      a3[i] = dr32[i] - c[i];
+      a4[i] = dr42[i] - c[i];
+    }
+
+    // Forces: f2 = -force_1, f4 = -force_3
+    if (newton_bond || i1 < nlocal) {
+      cvatom[i1][0] += a1[0]*force_1[0];
+      cvatom[i1][1] += a1[1]*force_1[1];
+      cvatom[i1][2] += a1[2]*force_1[2];
+      cvatom[i1][3] += a1[0]*force_1[1];
+      cvatom[i1][4] += a1[0]*force_1[2];
+      cvatom[i1][5] += a1[1]*force_1[2];
+      cvatom[i1][6] += a1[1]*force_1[0];
+      cvatom[i1][7] += a1[2]*force_1[0];
+      cvatom[i1][8] += a1[2]*force_1[1];
+    }
+    if (newton_bond || i2 < nlocal) {
+      cvatom[i2][0] += -a2[0]*force_1[0];
+      cvatom[i2][1] += -a2[1]*force_1[1];
+      cvatom[i2][2] += -a2[2]*force_1[2];
+      cvatom[i2][3] += -a2[0]*force_1[1];
+      cvatom[i2][4] += -a2[0]*force_1[2];
+      cvatom[i2][5] += -a2[1]*force_1[2];
+      cvatom[i2][6] += -a2[1]*force_1[0];
+      cvatom[i2][7] += -a2[2]*force_1[0];
+      cvatom[i2][8] += -a2[2]*force_1[1];
+    }
+    if (newton_bond || i3 < nlocal) {
+      cvatom[i3][0] += a3[0]*force_3[0];
+      cvatom[i3][1] += a3[1]*force_3[1];
+      cvatom[i3][2] += a3[2]*force_3[2];
+      cvatom[i3][3] += a3[0]*force_3[1];
+      cvatom[i3][4] += a3[0]*force_3[2];
+      cvatom[i3][5] += a3[1]*force_3[2];
+      cvatom[i3][6] += a3[1]*force_3[0];
+      cvatom[i3][7] += a3[2]*force_3[0];
+      cvatom[i3][8] += a3[2]*force_3[1];
+    }
+    if (newton_bond || i4 < nlocal) {
+      cvatom[i4][0] += -a4[0]*force_3[0];
+      cvatom[i4][1] += -a4[1]*force_3[1];
+      cvatom[i4][2] += -a4[2]*force_3[2];
+      cvatom[i4][3] += -a4[0]*force_3[1];
+      cvatom[i4][4] += -a4[0]*force_3[2];
+      cvatom[i4][5] += -a4[1]*force_3[2];
+      cvatom[i4][6] += -a4[1]*force_3[0];
+      cvatom[i4][7] += -a4[2]*force_3[0];
+      cvatom[i4][8] += -a4[2]*force_3[1];
+    }
+  }
+}
+
+
+void DihedralRBP::verify_ev_tally(int i1, int i2, int i3, int i4,
+                                   int nlocal, int newton_bond,
+                                   double edihedral,
+                                   const double *force_1, const double *force_2,
+                                   const double *force_3, const double *force_4,
+                                   const double *dr_a, const double *dr_b,
+                                   const double *dr32)
+{
+  constexpr double tol = 1e-10;
+  bool mismatch = false;
+
+  // ===================================================================
+  // Build the inputs that the original ev_tally expects
+  // ===================================================================
+
+  // vb1 = r1 - r2 = -dr_a
+  double vb1[3] = {-dr_a[0], -dr_a[1], -dr_a[2]};
+  // vb2 = r3 - r2 = dr32
+  double vb2[3] = {dr32[0], dr32[1], dr32[2]};
+  // vb3 = r4 - r3 = dr_b
+  double vb3[3] = {dr_b[0], dr_b[1], dr_b[2]};
+
+  // ===================================================================
+  // 1. VIRIAL: compare the two formulations
+  // ===================================================================
+
+  // --- Original LAMMPS dihedral virial ---
+  // v[0] = vb1x*f1[0] + vb2x*f3[0] + (vb3x+vb2x)*f4[0]
+  // etc.
+  double v_orig[6];
+  v_orig[0] = vb1[0]*force_1[0] + vb2[0]*force_3[0] + (vb3[0]+vb2[0])*force_4[0];
+  v_orig[1] = vb1[1]*force_1[1] + vb2[1]*force_3[1] + (vb3[1]+vb2[1])*force_4[1];
+  v_orig[2] = vb1[2]*force_1[2] + vb2[2]*force_3[2] + (vb3[2]+vb2[2])*force_4[2];
+  v_orig[3] = vb1[0]*force_1[1] + vb2[0]*force_3[1] + (vb3[0]+vb2[0])*force_4[1];
+  v_orig[4] = vb1[0]*force_1[2] + vb2[0]*force_3[2] + (vb3[0]+vb2[0])*force_4[2];
+  v_orig[5] = vb1[1]*force_1[2] + vb2[1]*force_3[2] + (vb3[1]+vb2[1])*force_4[2];
+
+  // --- New simplified virial ---
+  // W = -(dr_a ⊗ force_1 + dr_b ⊗ force_3)
+  double v_new[6];
+  v_new[0] = -(dr_a[0]*force_1[0] + dr_b[0]*force_3[0]);
+  v_new[1] = -(dr_a[1]*force_1[1] + dr_b[1]*force_3[1]);
+  v_new[2] = -(dr_a[2]*force_1[2] + dr_b[2]*force_3[2]);
+  v_new[3] = -(dr_a[0]*force_1[1] + dr_b[0]*force_3[1]);
+  v_new[4] = -(dr_a[0]*force_1[2] + dr_b[0]*force_3[2]);
+  v_new[5] = -(dr_a[1]*force_1[2] + dr_b[1]*force_3[2]);
+
+  // Compare
+  for (int i = 0; i < 6; i++) {
+    double scale = std::max(1.0, std::max(std::fabs(v_orig[i]), std::fabs(v_new[i])));
+    double diff = std::fabs(v_orig[i] - v_new[i]);
+    if (diff > tol * scale) {
+      if (!mismatch) {
+        error->warning(FLERR, "ev_tally verification FAILED at timestep {}",
+                       update->ntimestep);
+        mismatch = true;
+      }
+      fprintf(screen, "  VIRIAL[%d] mismatch: orig=%.15e  new=%.15e  diff=%.3e\n",
+              i, v_orig[i], v_new[i], diff);
+    }
+  }
+
+  // ===================================================================
+  // 2. CENTROID VIRIAL: compare the two formulations
+  // ===================================================================
+
+  // --- Original LAMMPS centroid virial ---
+  // Uses chain topology: r0 = (r1+r2+r3+r4)/4
+  // a1 = r1 - r0 = ( 3*vb1 - 2*vb2 -   vb3)/4
+  // a2 = r2 - r0 = (  -vb1 - 2*vb2 -   vb3)/4,  f2 = -f1-f3-f4
+  // a3 = r3 - r0 = (  -vb1 + 2*vb2 -   vb3)/4
+  // a4 = r4 - r0 = (  -vb1 + 2*vb2 + 3*vb3)/4
+
+  double a_orig[4][3];
+  for (int i = 0; i < 3; i++) {
+    a_orig[0][i] = 0.25 * ( 3.0*vb1[i] - 2.0*vb2[i] -       vb3[i]);
+    a_orig[1][i] = 0.25 * (    -vb1[i] - 2.0*vb2[i] -       vb3[i]);
+    a_orig[2][i] = 0.25 * (    -vb1[i] + 2.0*vb2[i] -       vb3[i]);
+    a_orig[3][i] = 0.25 * (    -vb1[i] + 2.0*vb2[i] + 3.0 * vb3[i]);
+  }
+
+  // f2 from original: reconstructed as -f1-f3-f4
+  double f2_orig[3];
+  for (int i = 0; i < 3; i++)
+    f2_orig[i] = -force_1[i] - force_3[i] - force_4[i];
+
+  // Build cv[atom][component] for original: (r_a - r0) ⊗ f_a
+  // Components: 0=xx, 1=yy, 2=zz, 3=xy, 4=xz, 5=yz, 6=yx, 7=zx, 8=zy
+  const double *f_orig[4] = {force_1, f2_orig, force_3, force_4};
+  double cv_orig[4][9];
+  for (int a = 0; a < 4; a++) {
+    cv_orig[a][0] = a_orig[a][0] * f_orig[a][0];
+    cv_orig[a][1] = a_orig[a][1] * f_orig[a][1];
+    cv_orig[a][2] = a_orig[a][2] * f_orig[a][2];
+    cv_orig[a][3] = a_orig[a][0] * f_orig[a][1];
+    cv_orig[a][4] = a_orig[a][0] * f_orig[a][2];
+    cv_orig[a][5] = a_orig[a][1] * f_orig[a][2];
+    cv_orig[a][6] = a_orig[a][1] * f_orig[a][0];
+    cv_orig[a][7] = a_orig[a][2] * f_orig[a][0];
+    cv_orig[a][8] = a_orig[a][2] * f_orig[a][1];
+  }
+
+  // --- New centroid virial ---
+  // All positions relative to r2 via minimum-image displacement vectors
+  double dr12[3], dr42[3];
+  for (int i = 0; i < 3; i++) {
+    dr12[i] = -dr_a[i];                  // r1 - r2
+    dr42[i] = dr32[i] + dr_b[i];         // r4 - r2 = (r3-r2) + (r4-r3)
+  }
+
+  // Centroid relative to r2
+  double c[3];
+  for (int i = 0; i < 3; i++)
+    c[i] = 0.25 * (dr12[i] + dr32[i] + dr42[i]);
+
+  // Offsets from centroid
+  double a_new[4][3];
+  for (int i = 0; i < 3; i++) {
+    a_new[0][i] = dr12[i] - c[i];       // r1 - centroid
+    a_new[1][i] =         - c[i];        // r2 - centroid
+    a_new[2][i] = dr32[i] - c[i];       // r3 - centroid
+    a_new[3][i] = dr42[i] - c[i];       // r4 - centroid
+  }
+
+  // Forces in the new convention: f2 = -force_1 = force_2, f4 = -force_3 = force_4
+  // (note: force_2 = -force_1 and force_4 = -force_3 by construction)
+  const double *f_new[4] = {force_1, force_2, force_3, force_4};
+  double cv_new[4][9];
+  for (int a = 0; a < 4; a++) {
+    cv_new[a][0] = a_new[a][0] * f_new[a][0];
+    cv_new[a][1] = a_new[a][1] * f_new[a][1];
+    cv_new[a][2] = a_new[a][2] * f_new[a][2];
+    cv_new[a][3] = a_new[a][0] * f_new[a][1];
+    cv_new[a][4] = a_new[a][0] * f_new[a][2];
+    cv_new[a][5] = a_new[a][1] * f_new[a][2];
+    cv_new[a][6] = a_new[a][1] * f_new[a][0];
+    cv_new[a][7] = a_new[a][2] * f_new[a][0];
+    cv_new[a][8] = a_new[a][2] * f_new[a][1];
+  }
+
+  // Compare centroid virials per atom
+  const char *atom_labels[4] = {"atom1", "atom2", "atom3", "atom4"};
+  for (int a = 0; a < 4; a++) {
+    for (int c = 0; c < 9; c++) {
+      double scale = std::max(1.0, std::max(std::fabs(cv_orig[a][c]), std::fabs(cv_new[a][c])));
+      double diff = std::fabs(cv_orig[a][c] - cv_new[a][c]);
+      if (diff > tol * scale) {
+        if (!mismatch) {
+          error->warning(FLERR, "ev_tally verification FAILED at timestep {}",
+                         update->ntimestep);
+          mismatch = true;
+        }
+        fprintf(screen, "  CENTROID_VIRIAL[%s][%d] mismatch: orig=%.15e  new=%.15e  diff=%.3e\n",
+                atom_labels[a], c, cv_orig[a][c], cv_new[a][c], diff);
+      }
+    }
+  }
+
+  // ===================================================================
+  // 3. Also verify that the total centroid virial sums match the virial
+  // ===================================================================
+  // sum_a (r_a - r0) ⊗ f_a  should equal the total virial tensor
+  // (only the symmetric part, components 0-5)
+
+  double cv_sum_orig[6] = {0, 0, 0, 0, 0, 0};
+  double cv_sum_new[6]  = {0, 0, 0, 0, 0, 0};
+  for (int a = 0; a < 4; a++) {
+    cv_sum_orig[0] += cv_orig[a][0];
+    cv_sum_orig[1] += cv_orig[a][1];
+    cv_sum_orig[2] += cv_orig[a][2];
+    cv_sum_orig[3] += cv_orig[a][3];
+    cv_sum_orig[4] += cv_orig[a][4];
+    cv_sum_orig[5] += cv_orig[a][5];
+
+    cv_sum_new[0] += cv_new[a][0];
+    cv_sum_new[1] += cv_new[a][1];
+    cv_sum_new[2] += cv_new[a][2];
+    cv_sum_new[3] += cv_new[a][3];
+    cv_sum_new[4] += cv_new[a][4];
+    cv_sum_new[5] += cv_new[a][5];
+  }
+
+  for (int i = 0; i < 6; i++) {
+    double scale = std::max(1.0, std::max(std::fabs(cv_sum_orig[i]), std::fabs(v_orig[i])));
+    double diff_orig = std::fabs(cv_sum_orig[i] - v_orig[i]);
+    double diff_new  = std::fabs(cv_sum_new[i]  - v_new[i]);
+    if (diff_orig > tol * scale) {
+      if (!mismatch) {
+        error->warning(FLERR, "ev_tally verification FAILED at timestep {}",
+                       update->ntimestep);
+        mismatch = true;
+      }
+      fprintf(screen, "  ORIG sum(centroid_virial)[%d] != virial[%d]: sum=%.15e  vir=%.15e  diff=%.3e\n",
+              i, i, cv_sum_orig[i], v_orig[i], diff_orig);
+    }
+    if (diff_new > tol * scale) {
+      if (!mismatch) {
+        error->warning(FLERR, "ev_tally verification FAILED at timestep {}",
+                       update->ntimestep);
+        mismatch = true;
+      }
+      fprintf(screen, "  NEW  sum(centroid_virial)[%d] != virial[%d]: sum=%.15e  vir=%.15e  diff=%.3e\n",
+              i, i, cv_sum_new[i], v_new[i], diff_new);
+    }
+  }
+
+  // ===================================================================
+  // 4. Verify force balance: f1 + f2 + f3 + f4 = 0
+  // ===================================================================
+  for (int i = 0; i < 3; i++) {
+    double fsum = force_1[i] + force_2[i] + force_3[i] + force_4[i];
+    if (std::fabs(fsum) > tol) {
+      if (!mismatch) {
+        error->warning(FLERR, "ev_tally verification FAILED at timestep {}",
+                       update->ntimestep);
+        mismatch = true;
+      }
+      fprintf(screen, "  FORCE BALANCE[%d] violated: sum=%.15e\n", i, fsum);
+    }
+  }
+
+  // ===================================================================
+  // Summary
+  // ===================================================================
+  if (!mismatch) {
+    // Only print on first call to avoid flooding the log
+    static bool first_pass = true;
+    if (first_pass) {
+      fprintf(screen, "  ev_tally verification PASSED (timestep %ld)\n",
+              (long)update->ntimestep);
+      first_pass = false;
+    }
+  }
 }

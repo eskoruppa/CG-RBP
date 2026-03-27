@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 /* ----------------------------------------------------------------------
-   Contributing author: Enrico Skoruppa (Physics of Life, TU Dresden, Dresden)
+   Contributing author: Enrico Skoruppa (School of Physics and Astronomy, University of Edinburgh, Edinburgh)
 ------------------------------------------------------------------------- */
 
 
@@ -23,7 +23,9 @@ BondStyle(rbpfene,BondRBPFene);
 #ifndef LMP_BOND_RBP_FENE_H
 #define LMP_BOND_RBP_FENE_H
 
-#define CHECK_TORQUE_BALANCE
+// clang-format off
+#define RBPFENE_BOND_DEFAULT_SUBTRACT_GROUNDSTATE false
+// clang-format on
 
 #include <unordered_map>
 #include <string>
@@ -65,6 +67,7 @@ class BondRBPFene : public Bond {
       double Mtr_bl[3][3];   // bottom-left cross terms
       double Mtr_tr[3][3];   // top-right cross terms
       double equidist;
+      bool   subtract_groundstate;
       double K;
       double Rc;
       double R0;
@@ -77,7 +80,7 @@ class BondRBPFene : public Bond {
    RBPParams *params;  // indexed by bond type
    void allocate();
   
-   void assign_coeffs(int bond_type, const std::vector<double> &args);
+   void assign_coeffs(int bond_type, const std::vector<double> &args, bool subtract_groundstate = false);
    void set_static_(int bond_type);
    void set_equidist(int bond_type);
    void zero_stiffmat_(int bond_type);

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 /* ----------------------------------------------------------------------
-   Contributing author: Enrico Skoruppa (Physics of Life, TU Dresden, Dresden)
+   Contributing author: Enrico Skoruppa (School of Physics and Astronomy, University of Edinburgh, Edinburgh)
 ------------------------------------------------------------------------- */
 
 
@@ -63,21 +63,19 @@ void BondRBPFene::compute(int eflag, int vflag) {
 
   int id1, id2, bond_type;
   
-  double T1[3][3],T1tp[3][3],T2[3][3];
+  double T1[3][3],T2[3][3];
+  // double T1tp[3][3];
   double r1[3], r2[3], dr[3];
   double R[3][3];
   double Om[3], w[3];
   double Omd[3], wd[3]; 
   double Jinvtp[3][3];
 
-  double gamma[3],mu[3];
+  double A[3], B[3];
+  double torque_1[3], torque_2[3];
+  double force_1[3];
 
-  double tau1[3],tau2[3];
-  double tau1lab[3],tau2lab[3];
-  double Flab[3];
-  double tau_pure[3];
-  double levertorque[3];
-  double tmp[3];
+  double tmp1[3],tmp2[3];
 
   double **x = atom->x;                
   double **f = atom->f;             
@@ -106,9 +104,20 @@ void BondRBPFene::compute(int eflag, int vflag) {
     id2 = bondlist[bid][1];
     bond_type = bondlist[bid][2];
 
+    //-------------------------------------------------------------//
+    // Compute triads and positions
+    //-------------------------------------------------------------//
+
     // get quaternions
     quat1=bonus[ellipsoid[id1]].quat;
     quat2=bonus[ellipsoid[id2]].quat;
+
+    // transform quat to triads [SO(3)]
+    MathExtra::quat_to_mat(quat1, T1);
+    MathExtra::quat_to_mat(quat2, T2);
+
+    // compute R
+    lamath::mul_AtB(T1,T2,R);
 
     // get positions
     r1[0] = x[id1][0];
@@ -118,85 +127,105 @@ void BondRBPFene::compute(int eflag, int vflag) {
     r2[1] = x[id2][1];
     r2[2] = x[id2][2];
 
-    // transform quat to triads [SO(3)]
-    MathExtra::quat_to_mat(quat1, T1);
-    MathExtra::quat_to_mat(quat2, T2);
-
-    // compute T1^T
-    lamath::transpose(T1,T1tp);
-
-    // compute R
-    lamath::mul(T1tp,T2,R);
-    
-    // compute Omega
-    so3::rotmat2euler(R,Om);
-    
-    // compute w
-    dr[0] = r2[0] - r1[0]; 
-    dr[1] = r2[1] - r1[1]; 
-    dr[2] = r2[2] - r1[2]; 
-
+    // compute dr
+    lamath::subtract(r2,r1,dr);
     // check for domain mismatch of special neighbor
     if (domain->minimum_image_check(dr[0],dr[1],dr[2])) {
-      domain->minimum_image(dr[0],dr[1],dr[2]);
+      domain->minimum_image(FLERR,dr[0],dr[1],dr[2]);
     }
 
-    lamath::mul(T1tp,dr,w);
+    // compute w
+    lamath::mul_Atx(T1,dr,w);
 
-    // compute Omega_Delta
-    Omd[0] = Om[0] - params[bond_type].srot[0];
-    Omd[1] = Om[1] - params[bond_type].srot[1];
-    Omd[2] = Om[2] - params[bond_type].srot[2];
+    if (params[bond_type].subtract_groundstate) {
+      //-------------------------------------------------------------//
+      // Compute force wrench for se(3) (X) convention
+      //-------------------------------------------------------------//
 
-    // compute w_Delta
-    wd[0] = w[0] - params[bond_type].svec[0];
-    wd[1] = w[1] - params[bond_type].svec[1];
-    wd[2] = w[2] - params[bond_type].svec[2];
+      // compute Omega
+      so3::rotmat2euler(R,Om);
+      // compute Omega_Delta
+      lamath::subtract(Om,params[bond_type].srot,Omd);
+      // compute w_Delta
+      lamath::subtract(w,params[bond_type].svec,wd);
     
-    // compute transposed inverse left Jacobian
-    so3::leftJacobianInverseTransposed(Om,Jinvtp);
-    
-    // double tmpmat[3][3];
-    // so3::leftJacobianInverseTransposed(Om,tmpmat);
-    // lamath::transpose(tmpmat,Jinvtp);
-    
-    // compute gamma
-    lamath::mul(params[bond_type].Mr,Omd,gamma);
-    lamath::mul(params[bond_type].Mtr_tr,wd,tmp);
-    gamma[0] += tmp[0];
-    gamma[1] += tmp[1];
-    gamma[2] += tmp[2];
-    
-    // compute mu
-    lamath::mul(params[bond_type].Mtr_bl,Omd,mu);
-    lamath::mul(params[bond_type].Mt,wd,tmp);
-    mu[0] += tmp[0];
-    mu[1] += tmp[1];
-    mu[2] += tmp[2];
+      // compute partial E / partial Omega_Delta
+      lamath::mul(params[bond_type].Mr,Omd,A);
+      lamath::mul(params[bond_type].Mtr_tr,wd,tmp1);
+      lamath::add_to(A,tmp1);
 
-    // compute the torque component in frame T1 without the lever arm torque
-    lamath::mul(Jinvtp,gamma,tau_pure);
- 
-    // compute Force in lab frame acting on T1 (minus for T2)
-    lamath::mul(T1,mu,Flab);
+      // compute partial E / partial Omega_Delta
+      lamath::mul(params[bond_type].Mtr_bl,Omd,B);
+      lamath::mul(params[bond_type].Mt,wd,tmp1);
+      lamath::add_to(B,tmp1);
 
-    // compute torque on T1 in lab frame
-    MathExtra::cross3(w,mu,levertorque);
+      // compute transposed inverse left Jacobian
+      so3::leftJacobianInverseTransposed(Om,Jinvtp);
 
-    tmp[0] = tau_pure[0] + levertorque[0];
-    tmp[1] = tau_pure[1] + levertorque[1];
-    tmp[2] = tau_pure[2] + levertorque[2];
+      // compute force
+      lamath::mul(T1,B,force_1);
+      
+      // compute torque
+      lamath::mul(Jinvtp,A,tmp1);
+      lamath::mul(T1,tmp1,torque_2);
 
-    lamath::mul(T1,tmp,tau1lab);
-    lamath::mul(T1,tau_pure,tau2lab);
+      MathExtra::cross3(w,B,tmp1);
+      lamath::mul(T1,tmp1,torque_1);
+      lamath::add_to(torque_1,torque_2);
+
+    }
+    else{
+      //-------------------------------------------------------------//
+      // Compute force wrench for SE(3) (Y) convention
+      //-------------------------------------------------------------//
+      
+      double Dmat[3][3];
+      // lamath::mul(params[bond_type].Smat_tp,R,Dmat);
+      lamath::mul_AtB(params[bond_type].Smat,R,Dmat);
+
+      // compute Phi_delta (reuse Omd for this)
+      so3::rotmat2euler(Dmat,Omd);
+
+      // compute d (reuse wd for this)
+      lamath::subtract(w,params[bond_type].svec,tmp1);
+      lamath::mul_Atx(params[bond_type].Smat,tmp1,wd);
+      // lamath::mul(params[bond_type].Smat_tp,tmp1,wd);
+
+      // compute partial E / partial Omega_Delta
+      lamath::mul(params[bond_type].Mr,Omd,A);
+      lamath::mul(params[bond_type].Mtr_tr,wd,tmp1);
+      lamath::add_to(A,tmp1);
+
+      // compute partial E / partial Omega_Delta
+      lamath::mul(params[bond_type].Mtr_bl,Omd,B);
+      lamath::mul(params[bond_type].Mt,wd,tmp1);
+      lamath::add_to(B,tmp1);
+
+      // compute transposed inverse left Jacobian
+      so3::leftJacobianInverseTransposed(Omd,Jinvtp);
+
+      // compute torque 2
+      lamath::mul(Jinvtp,A,tmp1);
+      lamath::mul(params[bond_type].Smat,tmp1,tmp2);
+      lamath::mul(T1,tmp2,torque_2);
+
+      // compute force 1
+      lamath::mul(params[bond_type].Smat,B,tmp1);
+      lamath::mul(T1,tmp1,force_1);
+
+      // compute torque 1
+      MathExtra::cross3(w,tmp1,tmp2);
+      lamath::mul(T1,tmp2,torque_1);
+      lamath::add_to(torque_1,torque_2);
+    }
 
 
-      // ///////////////////////////////////////////////////////////////
-      // ///////////////////////////////////////////////////////////////
-      // // DEBUG CODE 
-      // double be = 0;
-      // double Yv[6]; 
-      // Yv[0] = Omd[0]; 
+    // ///////////////////////////////////////////////////////////////
+    // ///////////////////////////////////////////////////////////////
+    // // DEBUG CODE 
+    // double be = 0;
+    // double Yv[6]; 
+    // Yv[0] = Omd[0]; 
     // Yv[1] = Omd[1];
     // Yv[2] = Omd[2];
     // Yv[3] = wd[0];   
@@ -220,9 +249,9 @@ void BondRBPFene::compute(int eflag, int vflag) {
     // ///////////////////////////////////////////////////////////////
 
 
-    ///////////////////////////////////////////////////////////////
-    ///////////////////////////////////////////////////////////////
-    // FENE part
+    //-------------------------------------------------------------//
+    // Compute force due to FENE potential
+    //-------------------------------------------------------------//
     
     // FENE force (lab frame) and energy for this bond
     double Flab_fene[3] = {0.0, 0.0, 0.0};
@@ -288,68 +317,52 @@ void BondRBPFene::compute(int eflag, int vflag) {
         }
         else if (eflag) {
           E_fene = -0.5 * keff * log(rlogarg);
-
-          // fprintf(screen, "E_fene_ou = %.3f\n",E_fene);
-          // double test_rdel     = r - Rc+0.05;
-          // double test_rdelsq   = test_rdel * test_rdel;
-          // double test_rlogarg = 1.0 - test_rdelsq / Rspan2;
-          // fprintf(screen, "E_fene_ref = %.3f\n",-0.5 * keff * log(test_rlogarg));
         }
         
         double fbond = keff * rdel / (rlogarg * Rspan2 * r);
-        Flab[0] += fbond * dr[0];
-        Flab[1] += fbond * dr[1];
-        Flab[2] += fbond * dr[2];
+        force_1[0] += fbond * dr[0];
+        force_1[1] += fbond * dr[1];
+        force_1[2] += fbond * dr[2];
       }
     }
-    ///////////////////////////////////////////////////////////////
-    ///////////////////////////////////////////////////////////////
 
+    //-------------------------------------------------------------//
+    // Apply forces and torques to each atom
+    //-------------------------------------------------------------//
 
-    ////////////////////////////////////////////
-    ////////////////////////////////////////////
-
-    // apply force and torque to each of 2 atoms
     if (newton_bond || id1 < nlocal) {
 
-      f[id1][0] += Flab[0];
-      f[id1][1] += Flab[1];
-      f[id1][2] += Flab[2];
+      f[id1][0] += force_1[0];
+      f[id1][1] += force_1[1];
+      f[id1][2] += force_1[2];
 
-      torque[id1][0] += tau1lab[0];
-      torque[id1][1] += tau1lab[1];
-      torque[id1][2] += tau1lab[2];
+      torque[id1][0] += torque_1[0];
+      torque[id1][1] += torque_1[1];
+      torque[id1][2] += torque_1[2];
       
     }
 
     if (newton_bond || id2 < nlocal) {
 
-      f[id2][0] -= Flab[0];
-      f[id2][1] -= Flab[1];
-      f[id2][2] -= Flab[2];
+      f[id2][0] -= force_1[0];
+      f[id2][1] -= force_1[1];
+      f[id2][2] -= force_1[2];
 
-      torque[id2][0] -= tau2lab[0];
-      torque[id2][1] -= tau2lab[1];
-      torque[id2][2] -= tau2lab[2];
+      torque[id2][0] -= torque_2[0];
+      torque[id2][1] -= torque_2[1];
+      torque[id2][2] -= torque_2[2];
     }
 
     if (evflag) {
 
       double bond_energy = 0.0;
-      double Y_vec[6]; 
-
-      Y_vec[0] = Omd[0]; 
-      Y_vec[1] = Omd[1];
-      Y_vec[2] = Omd[2];
-      Y_vec[3] = wd[0];   
-      Y_vec[4] = wd[1];
-      Y_vec[5] = wd[2];
-
-      // Calculate energy: 0.5 * Y_vec^T * Mmat * Y_vec
-      for (int i_mat = 0; i_mat < 6; ++i_mat) { 
-        for (int j_mat = 0; j_mat < 6; ++j_mat) {
-          bond_energy += Y_vec[i_mat] * params[bond_type].Mmat[i_mat][j_mat] * Y_vec[j_mat];
-        }
+      const double Yv[6] = {Omd[0], Omd[1], Omd[2], wd[0], wd[1], wd[2]};
+      const auto& M = params[bond_type].Mmat;
+      for (int i = 0; i < 6; ++i) {
+          bond_energy += Yv[i] * M[i][i] * Yv[i];
+          for (int j = i + 1; j < 6; ++j) {
+              bond_energy += 2.0 * Yv[i] * M[i][j] * Yv[j];
+          }
       }
       bond_energy *= 0.5;
 
@@ -357,15 +370,9 @@ void BondRBPFene::compute(int eflag, int vflag) {
         bond_energy += E_fene;
       }
 
-      // For virial, delx,dely,delz should be vector from j to i (id2 to id1)
-      double vir_delx = x[id1][0] - x[id2][0];
-      double vir_dely = x[id1][1] - x[id2][1];
-      double vir_delz = x[id1][2] - x[id2][2];
-
-      // Call the base class's ev_tally_xyz function
-      ev_tally_xyz(id1, id2, nlocal, newton_bond, bond_energy, 
-                    Flab[0], Flab[1], Flab[2],
-                    vir_delx, vir_dely, vir_delz);
+      ev_tally_xyz(id1, id2, nlocal, newton_bond, bond_energy,
+                  force_1[0], force_1[1], force_1[2],
+                  -dr[0], -dr[1], -dr[2]);  // -(r2-r1) = r1-r2
     }
   }
 }
@@ -407,7 +414,7 @@ void BondRBPFene::coeff(int narg, char **arg)
 
     int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
     for (int bond_type=ilo;bond_type<=ihi;bond_type++) {
-      assign_coeffs(bond_type,db.bond(dbid++).coeffs);
+      assign_coeffs(bond_type,db.bond(dbid++).coeffs,db.metadata().subtract_groundstate);
     }
     return;
   }
@@ -420,7 +427,7 @@ void BondRBPFene::coeff(int narg, char **arg)
     coeffs.push_back(val);
   }
   for (int bond_type=ilo;bond_type<=ihi;bond_type++) {
-    assign_coeffs(bond_type,coeffs);
+    assign_coeffs(bond_type,coeffs,RBPFENE_BOND_DEFAULT_SUBTRACT_GROUNDSTATE);
   }
 }
 
@@ -533,7 +540,7 @@ void BondRBPFene::allocate() {
 }
 
 
-void BondRBPFene::assign_coeffs(int bond_type, const std::vector<double> &args) {
+void BondRBPFene::assign_coeffs(int bond_type, const std::vector<double> &args, bool subtract_groundstate) {
   // ------------------------------------------------------------
   // Inline numeric definitions (legacy / TWLC / full RBP)
   // Supported forms:
@@ -559,6 +566,8 @@ void BondRBPFene::assign_coeffs(int bond_type, const std::vector<double> &args) 
       "  3+6+21 (3 fene, 6 groundstate and full symmetric M assignment. Assignment by first iterating through the rows)";
     error->all(FLERR, msg.c_str());
   }
+
+  params[bond_type].subtract_groundstate = subtract_groundstate;
 
   // -------------------------------------------------------------------
   // fene parameters
@@ -628,25 +637,7 @@ void BondRBPFene::assign_coeffs(int bond_type, const std::vector<double> &args) 
       }
     }
   }
-  
-  
-  // // -------------------------------------------------------------------
-  // // -------------------------------------------------------------------
-  // // TEST
-  // for (int ii=0;ii<6;ii++) {
-  //   for (int jj=0;jj<6;jj++) {
-  //     params[bond_type].Mmat[ii][jj] = 0;
-  //   }
-  // }
-  // params[bond_type].Mmat[0][0] = 20;
-  // params[bond_type].Mmat[1][1] = 20;
-  // params[bond_type].Mmat[2][2] = 20;
-  // params[bond_type].Mmat[3][3] = 200;
-  // params[bond_type].Mmat[4][4] = 200;
-  // params[bond_type].Mmat[5][5] = 200;
-  // // -------------------------------------------------------------------
-  // // -------------------------------------------------------------------
-  
+    
   set_lower_triangle_(bond_type);
   assign_blocks_(bond_type);
   
