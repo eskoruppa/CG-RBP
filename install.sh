@@ -61,6 +61,10 @@ action angle_rbp.h
 action dihedral_rbp.cpp
 action dihedral_rbp.h
 
+# Precompute fix (local reference frames / triads)
+action fix_rbp_lrf.cpp
+action fix_rbp_lrf.h
+
 # Parser utilities
 action parse_rbp.cpp
 action parse_rbp.h

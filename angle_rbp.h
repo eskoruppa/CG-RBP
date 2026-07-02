@@ -26,6 +26,7 @@ AngleStyle(rbp,AngleRBP);
 
 // clang-format off
 #define RBP_ANGLE_DEFAULT_SUBTRACT_GROUNDSTATE false
+#define ANGLE_RBP_PRECOMPUTE_ACTIVE
 // clang-format on
 
 #include "angle.h"
@@ -76,6 +77,11 @@ class AngleRBP : public Angle {
   void allocate();
 
   void assign_coeffs(int angle_type, const std::vector<double> &args, bool subtract_groundstate = false);
+  void compute_derived_(int angle_type);
+
+#ifdef ANGLE_RBP_PRECOMPUTE_ACTIVE
+  class FixRBPLRF *fix_lrf;
+#endif
 };
 
 }

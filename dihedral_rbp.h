@@ -27,6 +27,7 @@ DihedralStyle(rbp,DihedralRBP);
 // clang-format off
 #define RBP_DIHEDRAL_DEFAULT_SUBTRACT_GROUNDSTATE false
 #define RBP_DIHEDRAL_USE_CUSTOM_EV_TALLY
+#define DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
 // clang-format on
 
 #include "dihedral.h"
@@ -77,6 +78,7 @@ class DihedralRBP : public Dihedral {
    void allocate();
 
    void assign_coeffs(int angle_type, const std::vector<double> &args, bool subtract_groundstate = false);
+   void compute_derived_(int dihedral_type);
    void ev_tally_rbp(int i1, int i2, int i3, int i4, int nlocal, int newton_bond,
                 double edihedral, const double *force_1, const double *force_3,
                 const double *dr_a, const double *dr_b, const double *dr32);
@@ -85,6 +87,10 @@ class DihedralRBP : public Dihedral {
                         double edihedral, const double *force_1, const double *force_2,
                         const double *force_3, const double *force_4, const double *dr_a, 
                         const double *dr_b, const double *dr32);
+
+#ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+   class FixRBPLRF *fix_lrf;
+#endif
 };
 
 }

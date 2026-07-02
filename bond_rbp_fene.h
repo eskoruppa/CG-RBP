@@ -25,6 +25,10 @@ BondStyle(rbpfene,BondRBPFene);
 
 // clang-format off
 #define RBPFENE_BOND_DEFAULT_SUBTRACT_GROUNDSTATE false
+#define BOND_RBP_FENE_PRECOMPUTE_ACTIVE
+// number of timesteps to suppress the "bond too long" warning after one is
+// emitted (avoids per-step, per-bond log flooding near the overstretch cap)
+#define RBP_FENE_WARN_INTERVAL 10000
 // clang-format on
 
 #include <unordered_map>
@@ -78,6 +82,7 @@ class BondRBPFene : public Bond {
    };
 
    RBPParams *params;  // indexed by bond type
+   bigint last_fene_warn_step;  // last step a "bond too long" warning was emitted
    void allocate();
   
    void assign_coeffs(int bond_type, const std::vector<double> &args, bool subtract_groundstate = false);
@@ -86,6 +91,10 @@ class BondRBPFene : public Bond {
    void zero_stiffmat_(int bond_type);
    void set_lower_triangle_(int bond_type);
    void assign_blocks_(int bond_type);
+
+#ifdef BOND_RBP_FENE_PRECOMPUTE_ACTIVE
+   class FixRBPLRF *fix_lrf;
+#endif
 };
 
 }

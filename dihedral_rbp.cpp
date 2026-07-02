@@ -29,6 +29,11 @@
 #include "atom_vec_ellipsoid.h"
 #include "utils.h"
 
+#ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+#include "fix_rbp_lrf.h"
+#include "modify.h"
+#endif
+
 
 using namespace LAMMPS_NS;
 
@@ -66,23 +71,25 @@ void DihedralRBP::compute(int eflag, int vflag) {
   int nlocal = atom->nlocal;
   int newton_bond = force->newton_bond;
   
+  #ifndef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
   auto avec = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
   AtomVecEllipsoid::Bonus *bonus = avec->bonus;
   int *ellipsoid = atom->ellipsoid;
+  #endif
   
   double **x = atom->x;                
   double **f = atom->f;             
   double **torque = atom->torque;   
 
   // Rotation variables
+  #ifndef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
   double *quat1,*quat2,*quat3,*quat4;
-  double T1[3][3],T2[3][3],T3[3][3],T4[3][3];
-  
-  double R_a[3][3],R_b[3][3];
-  double Om_a[3],Om_b[3];
-  double Omd_a[3],Omd_b[3];
+  double T1_arr[3][3], T2_arr[3][3], T3_arr[3][3], T4_arr[3][3];
+  double R_a[3][3], R_b[3][3];
+  double Om_a[3], Om_b[3];
   double Jinvtp_a[3][3];
   double Jinvtp_b[3][3];
+  #endif
   
   // Translation variables
   double r1[3],r2[3],r3[3],r4[3];
@@ -90,6 +97,7 @@ void DihedralRBP::compute(int eflag, int vflag) {
   double w_a[3],w_b[3];
   double wd_a[3],wd_b[3];
   
+  double Omd_a[3],Omd_b[3];
   double A[3], B[3], C[3], D[3];
   double torque_1[3], torque_2[3], torque_3[3], torque_4[3];
   double force_1[3], force_2[3], force_3[3], force_4[3];
@@ -111,6 +119,13 @@ void DihedralRBP::compute(int eflag, int vflag) {
     // Compute triads and positions
     //-------------------------------------------------------------//
 
+    #ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+    // load precomputed triads (zero-copy pointer cast)
+    double (*T1)[3] = (double(*)[3]) fix_lrf->triads[id1];
+    double (*T2)[3] = (double(*)[3]) fix_lrf->triads[id2];
+    double (*T3)[3] = (double(*)[3]) fix_lrf->triads[id3];
+    double (*T4)[3] = (double(*)[3]) fix_lrf->triads[id4];
+    #else
     // get quaternions
     quat1=bonus[ellipsoid[id1]].quat;
     quat2=bonus[ellipsoid[id2]].quat;
@@ -118,14 +133,19 @@ void DihedralRBP::compute(int eflag, int vflag) {
     quat4=bonus[ellipsoid[id4]].quat;
     
     // transform quat to triads [SO(3)]
-    MathExtra::quat_to_mat(quat1, T1);
-    MathExtra::quat_to_mat(quat2, T2);
-    MathExtra::quat_to_mat(quat3, T3);
-    MathExtra::quat_to_mat(quat4, T4);
+    MathExtra::quat_to_mat(quat1, T1_arr);
+    MathExtra::quat_to_mat(quat2, T2_arr);
+    MathExtra::quat_to_mat(quat3, T3_arr);
+    MathExtra::quat_to_mat(quat4, T4_arr);
+    double (*T1)[3] = T1_arr;
+    double (*T2)[3] = T2_arr;
+    double (*T3)[3] = T3_arr;
+    double (*T4)[3] = T4_arr;
 
     // compute R
     lamath::mul_AtB(T1,T2,R_a);
     lamath::mul_AtB(T3,T4,R_b);
+    #endif
 
     // get positions
     r1[0] = x[id1][0];
@@ -161,13 +181,17 @@ void DihedralRBP::compute(int eflag, int vflag) {
       // Compute force wrench for se(3) (X) convention
       //-------------------------------------------------------------//
 
+      #ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+      // Omd = Om - srot, where Om is precomputed in fwd_euler
+      lamath::subtract(fix_lrf->fwd_euler[id1],params[dihedral_type].srot1,Omd_a);
+      lamath::subtract(fix_lrf->fwd_euler[id3],params[dihedral_type].srot2,Omd_b);
+      #else
       // compute Omega_a and Omega_b
       so3::rotmat2euler(R_a,Om_a);
       so3::rotmat2euler(R_b,Om_b);
-
-      // compute Omega_delta (Omega_d = Omega - Omega_s)
       lamath::subtract(Om_a,params[dihedral_type].srot1,Omd_a);
       lamath::subtract(Om_b,params[dihedral_type].srot2,Omd_b);
+      #endif
 
       // compute w_delta (w_d = w - w_s)
       lamath::subtract(w_a,params[dihedral_type].svec1,wd_a);
@@ -198,8 +222,13 @@ void DihedralRBP::compute(int eflag, int vflag) {
       lamath::add(tmp1,tmp2,D);
 
       // compute transposed inverse left Jacobians
+      #ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+      double (*Jinvtp_a)[3] = (double(*)[3]) fix_lrf->fwd_Jinvtp[id1];
+      double (*Jinvtp_b)[3] = (double(*)[3]) fix_lrf->fwd_Jinvtp[id3];
+      #else
       so3::leftJacobianInverseTransposed(Om_a,Jinvtp_a);
       so3::leftJacobianInverseTransposed(Om_b,Jinvtp_b);
+      #endif
 
       // force 1 and 2
       lamath::mul(T1,B,force_1);
@@ -236,6 +265,15 @@ void DihedralRBP::compute(int eflag, int vflag) {
       // Compute force wrench for SE(3) (Y) convention
       //-------------------------------------------------------------//
 
+      #ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+      // Phi_delta precomputed in fwd_euler (already the delta for Y)
+      Omd_a[0] = fix_lrf->fwd_euler[id1][0];
+      Omd_a[1] = fix_lrf->fwd_euler[id1][1];
+      Omd_a[2] = fix_lrf->fwd_euler[id1][2];
+      Omd_b[0] = fix_lrf->fwd_euler[id3][0];
+      Omd_b[1] = fix_lrf->fwd_euler[id3][1];
+      Omd_b[2] = fix_lrf->fwd_euler[id3][2];
+      #else
       // compute Phi_delta_a (use Jinvtp_a for D_a and Omd_a for Phi_delta_a)
       lamath::mul_AtB(params[dihedral_type].Smat1,R_a,Jinvtp_a);
       so3::rotmat2euler(Jinvtp_a,Omd_a);
@@ -243,6 +281,7 @@ void DihedralRBP::compute(int eflag, int vflag) {
       // compute Phi_delta_b (use Jinvtp_b for D_b and Omd_b for Phi_delta_b)
       lamath::mul_AtB(params[dihedral_type].Smat2,R_b,Jinvtp_b);
       so3::rotmat2euler(Jinvtp_b,Omd_b);
+      #endif
 
       // compute d_a (reuse wd_a for d_a)
       lamath::subtract(w_a,params[dihedral_type].svec1,tmp1);
@@ -277,7 +316,12 @@ void DihedralRBP::compute(int eflag, int vflag) {
       lamath::add(tmp1,tmp2,D);
 
       // compute torque 2
+      #ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+      double (*Jinvtp_a)[3] = (double(*)[3]) fix_lrf->fwd_Jinvtp[id1];
+      #else
       so3::leftJacobianInverseTransposed(Omd_a,Jinvtp_a);
+      #endif
+
       lamath::mul(Jinvtp_a,A,tmp1);
       lamath::mul(params[dihedral_type].Smat1,tmp1,tmp2);
       lamath::mul(T1,tmp2,tmp3);
@@ -294,7 +338,12 @@ void DihedralRBP::compute(int eflag, int vflag) {
       lamath::add_to(torque_1,tmp3);
       
       // compute torque 4
+      #ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+      double (*Jinvtp_b)[3] = (double(*)[3]) fix_lrf->fwd_Jinvtp[id3];
+      #else
       so3::leftJacobianInverseTransposed(Omd_b,Jinvtp_b);
+      #endif
+
       lamath::mul(Jinvtp_b,C,tmp1);
       lamath::mul(params[dihedral_type].Smat2,tmp1,tmp2);
       lamath::mul(T3,tmp2,tmp3);
@@ -388,6 +437,10 @@ void DihedralRBP::compute(int eflag, int vflag) {
       // ev tally 
       //-------------------------------------------------------------//
     
+      // Coupling energy E = Yd_a^T M Yd_b (no 1/2: M is the full off-diagonal
+      // coupling block M_{i,i+2} of the global 1/2 sum_ij Y_i^T M_ij Y_j, so the
+      // M_{i,i+2} and M_{i+2,i}=M^T terms add and cancel the 1/2). This matches
+      // the forces, which use the full gradient (A,B)=M Yd_b, (C,D)=M^T Yd_a.
       double dihedral_energy = 0.0;
       const double Yd1[6] = {Omd_a[0], Omd_a[1], Omd_a[2], wd_a[0], wd_a[1], wd_a[2]};
       const double Yd2[6] = {Omd_b[0], Omd_b[1], Omd_b[2], wd_b[0], wd_b[1], wd_b[2]};
@@ -396,7 +449,6 @@ void DihedralRBP::compute(int eflag, int vflag) {
           dihedral_energy += Yd1[i_mat] * params[dihedral_type].Mmat[i_mat][j_mat] * Yd2[j_mat];
         }
       }
-      dihedral_energy *= 0.5;
       
       #ifdef RBP_DIHEDRAL_USE_CUSTOM_EV_TALLY
       double dr32[3];
@@ -492,6 +544,27 @@ void DihedralRBP::init_style() {
   if (domain->dimension != 3)
     error->all(FLERR, "Dihedral style rbp requires a 3D simulation");
 
+  #ifdef DIHEDRAL_RBP_PRECOMPUTE_ACTIVE
+  // auto-create or find fix rbp/lrf
+  auto fixes = modify->get_fix_by_style("^rbp/lrf");
+  if (fixes.empty())
+    fix_lrf = dynamic_cast<FixRBPLRF*>(modify->add_fix("rbp_lrf all rbp/lrf"));
+  else
+    fix_lrf = dynamic_cast<FixRBPLRF*>(fixes[0]);
+
+  // Register dihedral sub-junction params
+  for (int i = 1; i <= atom->ndihedraltypes; i++) {
+    if (setflag[i]) {
+      fix_lrf->register_dihedral_junction(i, 0, params[i].subtract_groundstate,
+                                          params[i].srot1, params[i].svec1,
+                                          "dihedral_rbp");
+      fix_lrf->register_dihedral_junction(i, 1, params[i].subtract_groundstate,
+                                          params[i].srot2, params[i].svec2,
+                                          "dihedral_rbp");
+    }
+  }
+  #endif
+
   // for (int i = 1; i <= atom->ndihedraltypes; i++) {
   //   if (!setflag[i])
   //     error->all(FLERR, "Not all dihedral coefficients are set for dihedral style rbp");
@@ -504,7 +577,16 @@ void DihedralRBP::init_style() {
 ------------------------------------------------------------------------- */
 
 void DihedralRBP::write_restart(FILE *fp) {
-  fwrite(&params[1], sizeof(RBPParams), atom->ndihedraltypes, fp);
+  // Write only primary fields (Ystatic1, Ystatic2, Mmat, subtract_groundstate);
+  // derived fields (Smat, srot, svec, M-blocks and their transposes) are
+  // recomputed on read.
+  for (int i = 1; i <= atom->ndihedraltypes; i++) {
+    int sg = params[i].subtract_groundstate ? 1 : 0;
+    fwrite(&sg, sizeof(int), 1, fp);
+    fwrite(params[i].Ystatic1, sizeof(double), 6, fp);
+    fwrite(params[i].Ystatic2, sizeof(double), 6, fp);
+    fwrite(&params[i].Mmat[0][0], sizeof(double), 36, fp);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -514,25 +596,25 @@ void DihedralRBP::write_restart(FILE *fp) {
 void DihedralRBP::read_restart(FILE *fp) {
   allocate();
 
-  if (comm->me == 0) {
-    utils::sfread(FLERR,
-                  &params[1],
-                  sizeof(RBPParams),
-                  atom->ndihedraltypes,
-                  fp,
-                  nullptr,
-                  error);
+  for (int i = 1; i <= atom->ndihedraltypes; i++) {
+    int sg = 0;
+    if (comm->me == 0) {
+      utils::sfread(FLERR, &sg, sizeof(int), 1, fp, nullptr, error);
+      utils::sfread(FLERR, params[i].Ystatic1, sizeof(double), 6, fp, nullptr, error);
+      utils::sfread(FLERR, params[i].Ystatic2, sizeof(double), 6, fp, nullptr, error);
+      utils::sfread(FLERR, &params[i].Mmat[0][0], sizeof(double), 36, fp, nullptr, error);
+    }
+    MPI_Bcast(&sg, 1, MPI_INT, 0, world);
+    MPI_Bcast(params[i].Ystatic1, 6, MPI_DOUBLE, 0, world);
+    MPI_Bcast(params[i].Ystatic2, 6, MPI_DOUBLE, 0, world);
+    MPI_Bcast(&params[i].Mmat[0][0], 36, MPI_DOUBLE, 0, world);
+
+    params[i].subtract_groundstate = (sg != 0);
+
+    compute_derived_(i);
+
+    setflag[i] = 1;
   }
-
-  // broadcast the whole params block to all ranks
-  MPI_Bcast(&params[1],
-            atom->ndihedraltypes * static_cast<int>(sizeof(RBPParams)),
-            MPI_BYTE,
-            0,
-            world);
-
-  // mark all types as having coefficients
-  for (int i = 1; i <= atom->ndihedraltypes; i++) setflag[i] = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -589,7 +671,24 @@ void DihedralRBP::assign_coeffs(int dihedral_type, const std::vector<double> &ar
     params[dihedral_type].Ystatic2[i] = args[i+6];
   }
 
-  // assign partial static
+  int argid = 12;
+  for (int ii=0;ii<6;ii++) {
+    for (int jj=0;jj<6;jj++) {
+      params[dihedral_type].Mmat[ii][jj] = args[argid++];
+    }
+  }
+
+  compute_derived_(dihedral_type);
+
+  setflag[dihedral_type] = 1;
+}
+
+/* ----------------------------------------------------------------------
+   Recompute derived fields (srot, svec, Smat, M-blocks and transposes)
+   from the primary fields (Ystatic1, Ystatic2, Mmat).
+------------------------------------------------------------------------- */
+
+void DihedralRBP::compute_derived_(int dihedral_type) {
   for (int ii=0;ii<3;ii++) {
     params[dihedral_type].srot1[ii] = params[dihedral_type].Ystatic1[ii];
     params[dihedral_type].svec1[ii] = params[dihedral_type].Ystatic1[ii+3];
@@ -597,16 +696,8 @@ void DihedralRBP::assign_coeffs(int dihedral_type, const std::vector<double> &ar
     params[dihedral_type].svec2[ii] = params[dihedral_type].Ystatic2[ii+3];
   }
 
-  // assigne Smat
   so3::euler2rotmat(params[dihedral_type].srot1,params[dihedral_type].Smat1);
   so3::euler2rotmat(params[dihedral_type].srot2,params[dihedral_type].Smat2);
-
-  int argid = 12;
-  for (int ii=0;ii<6;ii++) {
-    for (int jj=0;jj<6;jj++) {
-      params[dihedral_type].Mmat[ii][jj] = args[argid++];
-    }
-  }
 
   for (int r = 0; r < 3; r++) {
     for (int c = 0; c < 3; c++) {
@@ -621,8 +712,6 @@ void DihedralRBP::assign_coeffs(int dihedral_type, const std::vector<double> &ar
   lamath::transpose(params[dihedral_type].Mtt,params[dihedral_type].Mtt_tp);
   lamath::transpose(params[dihedral_type].Mtr,params[dihedral_type].Mtr_tp);
   lamath::transpose(params[dihedral_type].Mrt,params[dihedral_type].Mrt_tp);
-
-  setflag[dihedral_type] = 1;
 }
 
 

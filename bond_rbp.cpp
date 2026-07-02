@@ -32,6 +32,11 @@
 #include <cstring>    
 #include <algorithm> 
 
+#ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+#include "fix_rbp_lrf.h"
+#include "modify.h"
+#endif
+
 using namespace LAMMPS_NS;
 
 /* ----------------------------------------------------------------------
@@ -62,13 +67,9 @@ void BondRBP::compute(int eflag, int vflag) {
 
   int id1, id2, bond_type;
   
-  double T1[3][3],T2[3][3];
-  // double T1tp[3][3];
   double r1[3], r2[3], dr[3];
-  double R[3][3];
-  double Om[3], w[3];
-  double Omd[3], wd[3]; 
-  double Jinvtp[3][3];
+  double w[3];
+  double Omd[3], wd[3];
 
   double A[3], B[3];
   double torque_1[3], torque_2[3];
@@ -86,11 +87,15 @@ void BondRBP::compute(int eflag, int vflag) {
   double **x = atom->x;                
   double **f = atom->f;             
   double **torque = atom->torque;   
+
+  #ifndef BOND_RBP_PRECOMPUTE_ACTIVE
   double *quat1,*quat2;
+  double T1_arr[3][3], T2_arr[3][3];
   
   auto avec = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
   AtomVecEllipsoid::Bonus *bonus = avec->bonus;
   int *ellipsoid = atom->ellipsoid;
+  #endif
 
   ev_init(eflag, vflag);
 
@@ -109,16 +114,21 @@ void BondRBP::compute(int eflag, int vflag) {
     // Compute triads and positions
     //-------------------------------------------------------------//
 
+    #ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+    // load precomputed triads (zero-copy pointer cast)
+    double (*T1)[3] = (double(*)[3]) fix_lrf->triads[id1];
+    double (*T2)[3] = (double(*)[3]) fix_lrf->triads[id2];
+    #else
     // get quaternions
     quat1=bonus[ellipsoid[id1]].quat;
     quat2=bonus[ellipsoid[id2]].quat;
 
     // transform quat to triads [SO(3)]
-    MathExtra::quat_to_mat(quat1, T1);
-    MathExtra::quat_to_mat(quat2, T2);
-    
-    // compute R
-    lamath::mul_AtB(T1,T2,R);
+    MathExtra::quat_to_mat(quat1, T1_arr);
+    MathExtra::quat_to_mat(quat2, T2_arr);
+    double (*T1)[3] = T1_arr;
+    double (*T2)[3] = T2_arr;
+    #endif
 
     // get positions
     r1[0] = x[id1][0];
@@ -143,10 +153,16 @@ void BondRBP::compute(int eflag, int vflag) {
       // Compute force wrench for se(3) (X) convention
       //-------------------------------------------------------------//
 
-      // compute Omega
+      #ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+      // Omd = Om - srot, where Om is precomputed in fwd_euler
+      lamath::subtract(fix_lrf->fwd_euler[id1],params[bond_type].srot,Omd);
+      #else
+      double R[3][3];
+      lamath::mul_AtB(T1,T2,R);
+      double Om[3];
       so3::rotmat2euler(R,Om);
-      // compute Omega_Delta
       lamath::subtract(Om,params[bond_type].srot,Omd);
+      #endif
       // compute w_Delta
       lamath::subtract(w,params[bond_type].svec,wd);
     
@@ -155,13 +171,18 @@ void BondRBP::compute(int eflag, int vflag) {
       lamath::mul(params[bond_type].Mtr_tr,wd,tmp1);
       lamath::add_to(A,tmp1);
 
-      // compute partial E / partial Omega_Delta
+      // compute partial E / partial w_Delta
       lamath::mul(params[bond_type].Mtr_bl,Omd,B);
       lamath::mul(params[bond_type].Mt,wd,tmp1);
       lamath::add_to(B,tmp1);
 
-      // compute transposed inverse left Jacobian
+      #ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+      // load precomputed Jinvtp (zero-copy pointer cast)
+      double (*Jinvtp)[3] = (double(*)[3]) fix_lrf->fwd_Jinvtp[id1];
+      #else
+      double Jinvtp[3][3];
       so3::leftJacobianInverseTransposed(Om,Jinvtp);
+      #endif
 
       // compute force
       lamath::mul(T1,B,force_1);
@@ -179,32 +200,41 @@ void BondRBP::compute(int eflag, int vflag) {
       //-------------------------------------------------------------//
       // Compute force wrench for SE(3) (Y) convention
       //-------------------------------------------------------------//
-      
-      // compute dynamic rotation matrix D = Smat^T * R
-      double Dmat[3][3];
-      // lamath::mul(params[bond_type].Smat_tp,R,Dmat);
-      lamath::mul_AtB(params[bond_type].Smat,R,Dmat);
 
-      // compute Phi_delta (reuse Omd for this)
+      #ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+      // Phi_delta precomputed in fwd_euler (already the delta for Y)
+      Omd[0] = fix_lrf->fwd_euler[id1][0];
+      Omd[1] = fix_lrf->fwd_euler[id1][1];
+      Omd[2] = fix_lrf->fwd_euler[id1][2];
+      #else
+      // compute dynamic rotation matrix D = Smat^T * R
+      double R[3][3];
+      lamath::mul_AtB(T1,T2,R);
+      double Dmat[3][3];
+      lamath::mul_AtB(params[bond_type].Smat,R,Dmat);
       so3::rotmat2euler(Dmat,Omd);
+      #endif
 
       // compute d (reuse wd for this)
       lamath::subtract(w,params[bond_type].svec,tmp1);
       lamath::mul_Atx(params[bond_type].Smat,tmp1,wd);
-      // lamath::mul(params[bond_type].Smat_tp,tmp1,wd);
 
       // compute partial E / partial Omega_Delta
       lamath::mul(params[bond_type].Mr,Omd,A);
       lamath::mul(params[bond_type].Mtr_tr,wd,tmp1);
       lamath::add_to(A,tmp1);
 
-      // compute partial E / partial Omega_Delta
+      // compute partial E / partial w_Delta
       lamath::mul(params[bond_type].Mtr_bl,Omd,B);
       lamath::mul(params[bond_type].Mt,wd,tmp1);
       lamath::add_to(B,tmp1);
 
-      // compute transposed inverse left Jacobian
+      #ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+      double (*Jinvtp)[3] = (double(*)[3]) fix_lrf->fwd_Jinvtp[id1];
+      #else
+      double Jinvtp[3][3];
       so3::leftJacobianInverseTransposed(Omd,Jinvtp);
+      #endif
 
       // compute torque 2
       lamath::mul(Jinvtp,A,tmp1);
@@ -368,6 +398,23 @@ void BondRBP::init_style() {
   if (force->special_lj[1] != 0.0) {
     if (comm->me == 0) error->warning(FLERR, "Use special bonds = 0,x,x with bond style rbp");
   }
+
+  #ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+  // auto-create or find fix rbp/lrf
+  auto fixes = modify->get_fix_by_style("^rbp/lrf");
+  if (fixes.empty())
+    fix_lrf = dynamic_cast<FixRBPLRF*>(modify->add_fix("rbp_lrf all rbp/lrf"));
+  else
+    fix_lrf = dynamic_cast<FixRBPLRF*>(fixes[0]);
+
+  // Register per-bond-type junction params
+  for (int i = 1; i <= atom->nbondtypes; i++) {
+    if (setflag[i])
+      fix_lrf->register_bond_junction(i, params[i].subtract_groundstate,
+                                      params[i].srot, params[i].svec,
+                                      "bond_rbp");
+  }
+  #endif
 }
 
 
@@ -386,8 +433,14 @@ double BondRBP::equilibrium_distance(int bond_type)
 
 void BondRBP::write_restart(FILE *fp) {
 
-  fwrite(&params[1], sizeof(RBPParams), atom->nbondtypes, fp);
-
+  // Write only primary fields (Ystatic, Mmat, subtract_groundstate);
+  // derived fields (Smat, srot, svec, M-blocks, equidist) are recomputed on read.
+  for (int i = 1; i <= atom->nbondtypes; i++) {
+    int sg = params[i].subtract_groundstate ? 1 : 0;
+    fwrite(&sg, sizeof(int), 1, fp);
+    fwrite(params[i].Ystatic, sizeof(double), 6, fp);
+    fwrite(&params[i].Mmat[0][0], sizeof(double), 36, fp);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -398,26 +451,26 @@ void BondRBP::read_restart(FILE *fp) {
 
   allocate();
 
-  if (comm->me == 0) {
-    utils::sfread(FLERR,
-                  &params[1],
-                  sizeof(RBPParams),
-                  atom->nbondtypes,
-                  fp,
-                  nullptr,
-                  error);
+  for (int i = 1; i <= atom->nbondtypes; i++) {
+    int sg = 0;
+    if (comm->me == 0) {
+      utils::sfread(FLERR, &sg, sizeof(int), 1, fp, nullptr, error);
+      utils::sfread(FLERR, params[i].Ystatic, sizeof(double), 6, fp, nullptr, error);
+      utils::sfread(FLERR, &params[i].Mmat[0][0], sizeof(double), 36, fp, nullptr, error);
+    }
+    MPI_Bcast(&sg, 1, MPI_INT, 0, world);
+    MPI_Bcast(params[i].Ystatic, 6, MPI_DOUBLE, 0, world);
+    MPI_Bcast(&params[i].Mmat[0][0], 36, MPI_DOUBLE, 0, world);
+
+    params[i].subtract_groundstate = (sg != 0);
+
+    // Recompute derived fields from primary state
+    set_static_(i);
+    set_equidist(i);
+    assign_blocks_(i);
+
+    setflag[i] = 1;
   }
-
-  // broadcast the whole params block to all ranks
-  MPI_Bcast(&params[1],
-            atom->nbondtypes * static_cast<int>(sizeof(RBPParams)),
-            MPI_BYTE,
-            0,
-            world);
-
-  // mark all types as having coefficients
-  for (int i = 1; i <= atom->nbondtypes; i++) setflag[i] = 1;
-
 }
 
 /* ----------------------------------------------------------------------

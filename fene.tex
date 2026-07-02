@@ -1,0 +1,125 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  keepspaces=true,
+}
+
+\title{FENE implementation in \texttt{bond\_rbp\_fene}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Functional form}
+
+The FENE contribution is a \textbf{shifted, one-sided} form, active only when
+the bond is stretched beyond a cutoff $R_c$:
+\begin{equation}
+E_{\text{FENE}}(r) =
+\begin{cases}
+0, & r < R_c \\[6pt]
+-\dfrac{1}{2}\, k_{\text{eff}}\,
+\ln\!\left[\,1 - \dfrac{(r - R_c)^2}{\Delta^2}\,\right], & R_c \le r < r_{\max} \\[12pt]
+E(r_{\max}) + F(r_{\max})\,(r - r_{\max}), & r \ge r_{\max}
+\end{cases}
+\end{equation}
+with
+\begin{equation}
+\Delta \equiv R_0 - R_c, \qquad
+k_{\text{eff}} \equiv K\,\Delta^2, \qquad
+\rho(r) \equiv 1 - \frac{(r-R_c)^2}{\Delta^2}.
+\end{equation}
+
+The corresponding scalar force magnitude (acting along the bond vector) is
+\begin{equation}
+F(r) \;=\; \frac{dE}{dr}
+\;=\; \frac{k_{\text{eff}}\,(r - R_c)}{\rho(r)\,\Delta^2},
+\end{equation}
+so the force on atom~$1$ is
+\begin{equation}
+\mathbf{F}_1 \;=\; \frac{k_{\text{eff}}\,(r-R_c)}{\rho(r)\,\Delta^2\,r}\;(\mathbf{r}_2-\mathbf{r}_1),
+\qquad
+\mathbf{F}_2 = -\mathbf{F}_1.
+\end{equation}
+
+\section*{Behaviour and parameter meaning}
+
+\begin{itemize}
+  \item \textbf{$R_c$} --- onset distance. Below $R_c$ the FENE term is silent
+        ($E = F = 0$), so the harmonic ground-state RBP elasticity governs
+        small fluctuations. The potential is $C^1$-continuous at $r = R_c$
+        ($E(R_c) = 0$, $F(R_c) = 0$), and the local spring constant just above
+        $R_c$ is $K$.
+  \item \textbf{$R_0$} --- divergence radius (analogous to the standard FENE
+        $R_0$). The argument of the logarithm $\rho(r) \to 0$ as $r \to R_0$,
+        so $E \to \infty$ and $F \to \infty$.
+  \item \textbf{$K$} --- bare stiffness. The combination
+        $k_{\text{eff}} = K \Delta^2$ recovers the same near-divergence force
+        scaling as a standard Kremer--Grest FENE,
+        $F(r) \sim k_{\text{eff}} / [2(R_0 - r)]$.
+\end{itemize}
+
+\section*{Overstretch protection ($r \ge r_{\max}$)}
+
+To avoid numerical blow-up when integrators briefly overshoot, the code caps
+$\rho$ at a hard floor $\rho_{\min} = 0.1$
+(\texttt{bond\_rbp\_fene.cpp:92}). This corresponds to
+\begin{equation}
+r_{\max} = R_c + \Delta\sqrt{1 - \rho_{\min}}.
+\end{equation}
+For $r > r_{\max}$ the force is frozen at its value at $r_{\max}$ and the energy
+is linearly extrapolated:
+\begin{equation}
+F_{\max} = \frac{k_{\text{eff}}\,\sqrt{1-\rho_{\min}}}{\rho_{\min}\,\Delta},
+\qquad
+E(r) = E(r_{\max}) + F_{\max}\,(r - r_{\max}).
+\end{equation}
+A warning is logged at every step where $\rho < \rho_{\min}$, and a hard
+\texttt{error->one} is raised if $\rho \le -3$ (a clear sign the bond is far
+past breaking).
+
+\section*{Code map}
+
+The full FENE block sits inside \texttt{BondRBPFene::compute()} at
+\texttt{bond\_rbp\_fene.cpp:288--359}, executed \emph{after} the rigid-body RBP
+elastic wrench is computed. The contribution is added to \texttt{force\_1} (the
+lab-frame force on atom 1) and \texttt{E\_fene} is appended to
+\texttt{bond\_energy} for the energy/virial tally:
+\begin{itemize}
+  \item gating flag \texttt{params[bond\_type].fene\_active}, set in
+        \texttt{assign\_coeffs} from \texttt{K > 0 \&\& Rspan > 0};
+  \item coefficients parsed in \texttt{BondRBPFene::assign\_coeffs}
+        (\texttt{bond\_rbp\_fene.cpp:592--641}): the first three numeric
+        coefficients are $K$, $R_c$, $R_0$, followed by the standard $6$
+        ground-state $+$ ($6$/$12$/$21$) stiffness-matrix entries;
+  \item derived quantities $\Delta = R_0 - R_c$, $\Delta^2$ cached on the
+        per-type struct (\texttt{bond\_rbp\_fene.h:73--77}).
+\end{itemize}
+
+\section*{Relationship to the standard Kremer--Grest FENE}
+
+Setting $R_c = 0$ recovers exactly the standard FENE form
+\begin{equation}
+E(r) = -\tfrac{1}{2}\, K\, R_0^{\,2}\,
+\ln\!\left[1 - \left(\frac{r}{R_0}\right)^{\!2}\right],
+\end{equation}
+since $\Delta = R_0$ and $k_{\text{eff}} = K R_0^{\,2}$. With $R_c > 0$ the
+potential is shifted so that it is silent up to $R_c$ and acts purely as a
+one-sided non-extensibility wall between $R_c$ and $R_0$, while the harmonic
+RBP wrench provides the equilibrium restoring force around
+$|\mathbf{s}_{\text{vec}}|$.
+
+\end{document}

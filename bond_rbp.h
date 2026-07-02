@@ -26,6 +26,7 @@ BondStyle(rbp,BondRBP);
 
 // clang-format off
 #define RBP_BOND_DEFAULT_SUBTRACT_GROUNDSTATE false
+#define BOND_RBP_PRECOMPUTE_ACTIVE
 // clang-format on
 
 #include <unordered_map>
@@ -80,6 +81,10 @@ class BondRBP : public Bond {
    void zero_stiffmat_(int bond_type);
    void set_lower_triangle_(int bond_type);
    void assign_blocks_(int bond_type);
+
+#ifdef BOND_RBP_PRECOMPUTE_ACTIVE
+   class FixRBPLRF *fix_lrf;
+#endif
 };
 
 }
