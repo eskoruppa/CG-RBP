@@ -251,34 +251,6 @@ void BondRBP::compute(int eflag, int vflag) {
       lamath::add_to(torque_1,torque_2);
     }
 
-    // ///////////////////////////////////////////////////////////////
-    // ///////////////////////////////////////////////////////////////
-    // // DEBUG CODE 
-    // double be = 0;
-    // double Yv[6]; 
-    // Yv[0] = Omd[0]; 
-    // Yv[1] = Omd[1];
-    // Yv[2] = Omd[2];
-    // Yv[3] = wd[0];   
-    // Yv[4] = wd[1];
-    // Yv[5] = wd[2];
-    // // Calculate energy: 0.5 * Y_vec^T * Mmat * Y_vec
-    // for (int i_mat = 0; i_mat < 6; ++i_mat) { 
-    //   for (int j_mat = 0; j_mat < 6; ++j_mat) {
-    //     be += Yv[i_mat] * params[bond_type].Mmat[i_mat][j_mat] * Yv[j_mat];
-    //   }
-    // }
-    // be *= 0.5;
-    // if (be > 24) {
-    //   error->warning(FLERR, "High elastic energy: {} {} {} {}", update->ntimestep, atom->tag[id1],
-    //     atom->tag[id2], be);
-    //     fprintf(screen," High elastic energy: %.3f\n",be);
-    //     fprintf(screen," %.4f %.4f %.4f\n",Omd[0],Omd[1],Omd[2]);
-    //     fprintf(screen," %.4f %.4f %.4f\n",wd[0],wd[1],wd[2]);
-    //   }
-    // ///////////////////////////////////////////////////////////////
-    // ///////////////////////////////////////////////////////////////
-
     //-------------------------------------------------------------//
     // Apply forces and torques to each atom
     //-------------------------------------------------------------//

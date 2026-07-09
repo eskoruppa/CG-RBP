@@ -42,21 +42,24 @@ handled by the companion Python package
 
 ## The model in brief
 
-Each base pair is a rigid frame $\tau_i \in \mathrm{SE}(3)$ — a triad
-$\mathcal{T}_i \in \mathrm{SO}(3)$ (orientation) together with a position
-$\mathbf{r}_i \in \mathbb{R}^3$. The junction between adjacent beads is the
-body-frame step transformation $g_i \equiv \tau_i^{-1}\tau_{i+1} \in \mathrm{SE}(3)$,
-whose six coordinates $\mathbf{X}_i = (\mathbf{\Omega}_i,\ \mathbf{w}_i)^\intercal \equiv \mathcal{P}(g_i)$
-comprise three rotational components $\mathbf{\Omega}_i$ (tilt, roll, twist) and
-three translational components $\mathbf{w}_i$ (shift, slide, rise) —
-**rotational components first**.
-
-Sequence dependence enters through a ground-state shape $\mathbf{X}_{0i}$ and a
-Gaussian penalty on the deformation $\mathbf{X}_{\Delta i} = \mathbf{X}_i - \mathbf{X}_{0i}$.
-Collecting all step deformations into $\bar{\mathbf{X}}_\Delta$, the elastic
-energy is
+Each base pair is a rigid frame $\tau_i \in \mathrm{SE}(3)$: a triad
+$\mathcal{T}_i \in \mathrm{SO}(3)$ (orientation) together with a 3-D position
+vector. The junction between two adjacent beads is the body-frame step
+transformation, whose six coordinates split into three rotational components
+$\mathbf{\Omega}_i$ (tilt, roll, twist) and three translational components
+$\mathbf{w}_i$ (shift, slide, rise) — rotational first:
 
 ```math
+g_i \equiv \tau_i^{-1}\tau_{i+1} \in \mathrm{SE}(3), \qquad
+\mathbf{X}_i = \begin{pmatrix} \mathbf{\Omega}_i \\ \mathbf{w}_i \end{pmatrix} \equiv \mathcal{P}(g_i) .
+```
+
+Sequence dependence enters through a ground-state shape and a Gaussian penalty on
+the deformation away from it. Collecting all step deformations into one vector
+$\bar{\mathbf{X}}_\Delta$, the elastic energy is
+
+```math
+\mathbf{X}_{\Delta i} = \mathbf{X}_i - \mathbf{X}_{0i} , \qquad
 \beta E = \tfrac{1}{2}\,\bar{\mathbf{X}}_\Delta^{\intercal}\, M\, \bar{\mathbf{X}}_\Delta ,
 ```
 
@@ -81,13 +84,13 @@ and map onto bonds, angles, and dihedrals respectively:
 | M⁽¹⁾ (first off-diagonal) | range-1, 3 beads | **angle** | `rbp` |
 | M⁽ᵐ⁾, m ≥ 2 (higher) | range-m, 4 beads | **dihedral** | `rbp` |
 
-A local coupling relates the two triads of one junction → a **bond**. A
-range-$m$ coupling correlates two junctions, $\mathbf{X}_{\Delta i}$ and
-$\mathbf{X}_{\Delta,i+m}$; for $m = 1$ they share the central triad (three beads
-→ an **angle**), and for $m \ge 2$ all four beads are distinct (a **dihedral**
-over beads $i, i+1, i+m, i+m+1$). Because an angle or dihedral carries two
-junctions, its coefficients specify **two** ground-state vectors and the **full
-(non-symmetric) 6×6 coupling block**.
+A local coupling relates the two triads of one junction → a **bond**. A coupling
+of range $m$ correlates the deformations at steps $i$ and $i+m$: for $m = 1$ the
+two junctions share the central triad (three beads → an **angle**), and for
+$m \ge 2$ all four beads are distinct (a **dihedral** over beads
+$i, i+1, i+m, i+m+1$). Because an angle or dihedral carries two junctions, its
+coefficients specify **two** ground-state vectors and the **full (non-symmetric)
+6×6 coupling block**.
 
 The elastic torques on the oriented beads are evaluated in the Lie-algebra
 "force-wrench" formulation; the per-bead triad and inverse-transposed left
