@@ -1,4 +1,4 @@
-# ignore pythom build files
+# ignore python build files
 **build/
 **__pycache__
 **.c
@@ -16,3 +16,10 @@
 
 # ignore egg-info directory
 **.egg-info/
+
+# ignore superflous directories and files
+cgRBPTools/
+melting_design/
+Manuscript_cgRBP/
+oxDNA/
+fene.tex
