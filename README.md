@@ -74,7 +74,7 @@ A local coupling relates the two triads of one junction → a **bond**. A
 range-$m$ coupling correlates two junctions, $\mathbf{X}_{\Delta i}$ and
 $\mathbf{X}_{\Delta,i+m}$; for $m = 1$ they share the central triad (three beads
 → an **angle**), and for $m \ge 2$ all four beads are distinct (a **dihedral**
-over beads $i,\,i{+}1,\,i{+}m,\,i{+}m{+}1$). Because an angle or dihedral carries
+over beads $i, i+1, i+m, i+m+1$). Because an angle or dihedral carries
 two junctions, its coefficients specify **two** ground-state vectors and the
 **full (non-symmetric) $6\times6$ coupling block**.
 
