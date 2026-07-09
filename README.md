@@ -148,8 +148,8 @@ The package registers the following styles:
 - `bond_style rbp`        — local block, harmonic in the step deformation
 - `bond_style rbpfene`    — `rbp` + one-sided shifted FENE (non-extensibility)
 - `angle_style rbp`       — range-1 (next-neighbour junction) coupling
-- `dihedral_style rbp`    — a single style representing **all** range-$m \ge 2$
-  couplings
+- `dihedral_style rbp`    — a single style representing **all** couplings of
+  range $m \ge 2$
 - `fix rbp/lrf`           — auxiliary precompute fix, **created automatically**;
   users neither add nor configure it (see below)
 
@@ -246,11 +246,15 @@ thermo          1000
 run             1000000
 ```
 
-For an open chain of $N+1$ beads with maximal range $m_\mathrm{max}$, there are
-$N$ bond types, $N-1$ angle types, and $\sum_{m=2}^{m_\mathrm{max}}(N-m)$
-dihedral types (for the 271-bead, $m_\mathrm{max}=2$ example: 270 / 269 / 268).
-Closed molecules wrap the couplings around the seam and the counts increase
-accordingly.
+For an open chain of $N+1$ beads with maximal coupling range $m_\mathrm{max}$, the
+model contains
+
+```math
+N \;\text{bond types}, \qquad N-1 \;\text{angle types}, \qquad \sum_{m=2}^{m_\mathrm{max}} (N-m) \;\text{dihedral types}.
+```
+
+For the 271-bead, $m_\mathrm{max}=2$ example these are 270, 269, and 268. Closed
+molecules wrap the couplings around the seam and the counts increase accordingly.
 
 ---
 
@@ -297,14 +301,13 @@ by the boolean `subtract_groundstate` (metadata field `subtract groundstate`:
 `1 = X`, `0 = Y`):
 
 - **Y convention (default, `0`/`false`) — recommended.** The ground state is
-  factored out at the group level, $g_i = s_i d_i$, and the energy
-  $\beta E_\mathrm{Y} = \tfrac{1}{2}\,\bar{\mathbf{Y}}_\Delta^{\intercal} M_\mathrm{Y}\,\bar{\mathbf{Y}}_\Delta$
-  is quadratic in the dynamic coordinate $\mathbf{Y}_{\Delta i}$. This is
-  numerically robust for arbitrarily large intrinsic twist (including near
+  factored out at the group level, $g_i = s_i d_i$, so the energy is quadratic in
+  the dynamic coordinates $\mathbf{Y}_\Delta$ with stiffness $M_\mathrm{Y}$. This
+  is numerically robust for arbitrarily large intrinsic twist (including near
   180°).
 - **X convention (`1`/`true`).** The ground state is subtracted additively in
-  coordinate space, $\mathbf{X}_{\Delta i} = \mathbf{X}_i - \mathbf{X}_{0i}$,
-  giving $\beta E_\mathrm{X} = \tfrac{1}{2}\,\bar{\mathbf{X}}_\Delta^{\intercal} M_\mathrm{X}\,\bar{\mathbf{X}}_\Delta$.
+  coordinate space, $\mathbf{X}_\Delta = \mathbf{X} - \mathbf{X}_0$, and the energy
+  uses the alternative stiffness $M_\mathrm{X}$.
 
 Inline coefficients always use the **Y** convention. **All interaction types
 sharing a junction must use the same convention** — this is enforced at
