@@ -533,13 +533,14 @@ Principal options (see the cgRBPTools README for the full list):
 | Option | Meaning |
 |--------|---------|
 | `-seqfn` / `-seq` | DNA sequence (file or string) |
-| `-m` | parameter model: `cgnaplus` (default), `md`, `crystall` |
+| `-m` | parameter model: `cgnaplus` (default), `md`, or `crystal` |
 | `-cg` | base pairs per bead (default `1`) |
 | `-cr` | coupling range `m_max` (default `1`; `0` = local only) |
 | `-fene K Rc R0` | include a built-in FENE bond |
 | `-closed` | generate a circular molecule (sequence length must be a multiple of `-cg`) |
-| `-ul` / `-ue` | length (nm) / energy (`k_BT`) unit rescaling |
 | `-conf` | write an initial configuration: `straight`/`str`, `circular`/`circ`, `ground_state`/`gs` |
+| `-dlk` | excess linking number for circular / supercoiled configurations |
+| `-ul` / `-ue` | length (nm) / energy (`k_BT`) unit rescaling |
 | `-vis` / `-pdb` / `-xyz` | also write ChimeraX / PDB / XYZ visualisations |
 | `-o` | output base name |
 
@@ -549,7 +550,8 @@ dumps → SE(3) poses), `cgrbptools.core.backmap` (reconstruct base-pair
 resolution from coarse beads), and `cgrbptools.visualize`.
 
 > Parameter models are supplied by the PolyCG backend: `cgnaplus` (Sharma et
-> al. 2023, default), `md` (Lankaš et al. 2003), `crystall` (Olson et al. 1998).
+> al. 2023, default), `md` (Lankaš et al. 2003), and `crystal` (Olson et
+> al. 1998).
 
 ---
 
