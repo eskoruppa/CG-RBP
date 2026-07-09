@@ -42,36 +42,41 @@ handled by the companion Python package
 
 ## The model in brief
 
-Each base pair `i` is described by an element of the special Euclidean group
-SE(3): a triad `T ∈ SO(3)` (orientation) plus a position `r ∈ ℝ³`. The junction
-between adjacent beads is the body-frame step transformation
-`g_i = T_iᵀ · T_{i+1}` (in SE(3)), parametrised by six coordinates
-`X_i = [Ω_i ; v_i]` — three rotational (tilt, roll, twist) and three
-translational (shift, slide, rise), with **rotational components first**.
+Each base pair is a rigid frame $\tau_i \in \mathrm{SE}(3)$ — a triad
+$\mathcal{T}_i \in \mathrm{SO}(3)$ (orientation) together with a position
+$\mathbf{r}_i \in \mathbb{R}^3$. The junction between adjacent beads is the
+body-frame step transformation $g_i \equiv \tau_i^{-1}\tau_{i+1} \in \mathrm{SE}(3)$,
+whose six coordinates $\mathbf{X}_i = (\mathbf{\Omega}_i,\ \mathbf{w}_i)^\intercal \equiv \mathcal{P}(g_i)$
+comprise three rotational components $\mathbf{\Omega}_i$ (tilt, roll, twist) and
+three translational components $\mathbf{w}_i$ (shift, slide, rise) —
+**rotational components first**.
 
-Sequence dependence enters through a ground state `X⁰_i` and a Gaussian elastic
-penalty on deviations. Collecting all step deformations, the elastic energy is
+Sequence dependence enters through a ground-state shape $\mathbf{X}_{0i}$ and a
+Gaussian penalty on the deformation $\mathbf{X}_{\Delta i} = \mathbf{X}_i - \mathbf{X}_{0i}$.
+Collecting all step deformations into $\bar{\mathbf{X}}_\Delta$, the elastic
+energy is
 
+```math
+\beta E = \tfrac{1}{2}\,\bar{\mathbf{X}}_\Delta^{\intercal}\, M\, \bar{\mathbf{X}}_\Delta ,
 ```
-βE = ½ · ΔXᵀ · M · ΔX
-```
 
-where `M` is a banded stiffness matrix. This package realises the blocks of `M`
-as standard LAMMPS bonded interactions, according to how many beads each
-coupling involves:
+with $\beta = 1/k_\mathrm{B}T$ and $M$ a banded stiffness matrix. The package
+realises the $6\times6$ blocks of $M$ as standard LAMMPS bonded interactions,
+according to how many beads each coupling involves:
 
-| Block of `M`        | Coupling         | LAMMPS object | Style(s)            |
-|---------------------|------------------|---------------|---------------------|
-| `M⁽⁰⁾ᵢ` (diagonal)  | local, 2 beads   | **bond**      | `rbp`, `rbpfene`    |
-| `M⁽¹⁾ᵢ` (1st band)  | range-1, 3 beads | **angle**    | `rbp`               |
-| `M⁽ᵐ⁾ᵢ`, m ≥ 2      | range-m, 4 beads | **dihedral**  | `rbp`               |
+| Block of $M$ | Contribution to $\beta E$ | Coupling | LAMMPS object | Style(s) |
+|---|---|---|---|---|
+| $M^{(0)}_i$ (diagonal) | $\tfrac{1}{2}\,\mathbf{X}_{\Delta i}^{\intercal} M^{(0)}_i \mathbf{X}_{\Delta i}$ | local, 2 beads | **bond** | `rbp`, `rbpfene` |
+| $M^{(1)}_i$ (1st band) | $\mathbf{X}_{\Delta i}^{\intercal} M^{(1)}_i \mathbf{X}_{\Delta,i+1}$ | range-1, 3 beads | **angle** | `rbp` |
+| $M^{(m)}_i,\ m\ge2$ | $\mathbf{X}_{\Delta i}^{\intercal} M^{(m)}_i \mathbf{X}_{\Delta,i+m}$ | range-$m$, 4 beads | **dihedral** | `rbp` |
 
 A local coupling relates the two triads of one junction → a **bond**. A
-range-`m` coupling correlates two junctions `X_i` and `X_{i+m}`; for `m = 1`
-they share the central triad (three beads → an **angle**), and for `m ≥ 2` all
-four beads are distinct (a **dihedral** over beads `i, i+1, i+m, i+m+1`). Because
-an angle or dihedral carries two junctions, its coefficients specify **two**
-ground-state vectors and the **full (non-symmetric) 6×6 coupling block**.
+range-$m$ coupling correlates two junctions, $\mathbf{X}_{\Delta i}$ and
+$\mathbf{X}_{\Delta,i+m}$; for $m = 1$ they share the central triad (three beads
+→ an **angle**), and for $m \ge 2$ all four beads are distinct (a **dihedral**
+over beads $i,\,i{+}1,\,i{+}m,\,i{+}m{+}1$). Because an angle or dihedral carries
+two junctions, its coefficients specify **two** ground-state vectors and the
+**full (non-symmetric) $6\times6$ coupling block**.
 
 The elastic torques on the oriented beads are evaluated in the Lie-algebra
 "force-wrench" formulation; the per-bead triad and inverse-transposed left
@@ -84,14 +89,14 @@ Jacobian needed for this are precomputed once per timestep by the auxiliary
 
 | File | Purpose |
 |------|---------|
-| `bond_rbp.cpp/.h`      | Bond style `rbp` — local (diagonal) block `M⁽⁰⁾` |
+| `bond_rbp.cpp/.h`      | Bond style `rbp` — local (diagonal) block $M^{(0)}$ |
 | `bond_rbp_fene.cpp/.h` | Bond style `rbpfene` — `rbp` plus a built-in one-sided FENE non-extensibility term |
-| `angle_rbp.cpp/.h`     | Angle style `rbp` — range-1 coupling block `M⁽¹⁾` |
-| `dihedral_rbp.cpp/.h`  | Dihedral style `rbp` — range-`m` coupling blocks `M⁽ᵐ⁾`, `m ≥ 2` |
+| `angle_rbp.cpp/.h`     | Angle style `rbp` — range-1 coupling block $M^{(1)}$ |
+| `dihedral_rbp.cpp/.h`  | Dihedral style `rbp` — range-$m$ coupling blocks $M^{(m)},\ m\ge2$ |
 | `fix_rbp_lrf.cpp/.h`   | Auxiliary fix `rbp/lrf` — per-timestep triads / local reference frames (auto-created) |
 | `parse_rbp.cpp/.h`     | Reader for the `.db` parameter database (metadata + coefficient sections) |
 | `so3.h`                | Header-only SO(3)/SE(3) utilities (Rodrigues exp/log, left Jacobian, triad↔euler) |
-| `lamath.h`             | Header-only small 3×3 / 3-vector linear algebra and positive-definiteness (Cholesky) checks |
+| `lamath.h`             | Header-only small $3\times3$ / 3-vector linear algebra and positive-definiteness (Cholesky) checks |
 | `install.sh`           | LAMMPS package install/uninstall hook (checks MOLECULE + ASPHERE) |
 
 The companion Python package, the manuscript sources, and research notes
@@ -129,7 +134,7 @@ The package registers the following styles:
 - `bond_style rbp`        — local block, harmonic in the step deformation
 - `bond_style rbpfene`    — `rbp` + one-sided shifted FENE (non-extensibility)
 - `angle_style rbp`       — range-1 (next-neighbour junction) coupling
-- `dihedral_style rbp`    — a single style representing **all** range-`m ≥ 2`
+- `dihedral_style rbp`    — a single style representing **all** range-$m \ge 2$
   couplings
 - `fix rbp/lrf`           — auxiliary precompute fix, **created automatically**;
   users neither add nor configure it (see below)
@@ -190,9 +195,9 @@ thermo          1000
 run             1000000
 ```
 
-Here `Y0 = [0,0,0,0,0,1]` is a straight, untwisted step of unit rise; the six
-diagonal moduli are two bending, one twist (`11.76, 11.76, 29.41`) and three
-translational (`200`).
+Here $\mathbf{Y}_0 = (0,0,0,0,0,1)^\intercal$ is a straight, untwisted step of
+unit rise; the six diagonal moduli are two bending, one twist
+(`11.76, 11.76, 29.41`) and three translational (`200`).
 
 ### Sequence-dependent chain (parameters from a database file)
 
@@ -227,10 +232,11 @@ thermo          1000
 run             1000000
 ```
 
-For an open chain of `N+1` beads with maximal range `m_max`, there are `N` bond
-types, `N−1` angle types, and `Σ_{m=2}^{m_max}(N−m)` dihedral types (for the 271
--bead, `m_max = 2` example: 270 / 269 / 268). Closed molecules wrap the couplings
-around the seam and the counts increase accordingly.
+For an open chain of $N+1$ beads with maximal range $m_\mathrm{max}$, there are
+$N$ bond types, $N-1$ angle types, and $\sum_{m=2}^{m_\mathrm{max}}(N-m)$
+dihedral types (for the 271-bead, $m_\mathrm{max}=2$ example: 270 / 269 / 268).
+Closed molecules wrap the couplings around the seam and the counts increase
+accordingly.
 
 ---
 
@@ -244,14 +250,14 @@ stiffness entries are given in **row-major** order.
 
 | Style | Argument count | Layout |
 |-------|----------------|--------|
-| `bond rbp`     | **12 / 18 / 27** | 6 ground state + `M⁽⁰⁾` as 6 diagonal, 12 block-diagonal, or 21 upper-triangular entries |
+| `bond rbp`     | **12 / 18 / 27** | 6 ground state + $M^{(0)}$ as 6 diagonal, 12 block-diagonal, or 21 upper-triangular entries |
 | `bond rbpfene` | **15 / 21 / 30** | 3 FENE (`K Rc R0`) + the 12/18/27 above |
-| `angle rbp`    | **48** | 6 + 6 ground states + full 6×6 block (36 entries) |
-| `dihedral rbp` | **48** | 6 + 6 ground states + full 6×6 block (36 entries) |
+| `angle rbp`    | **48** | 6 + 6 ground states + full $6\times6$ block (36 entries) |
+| `dihedral rbp` | **48** | 6 + 6 ground states + full $6\times6$ block (36 entries) |
 
 The three `M` layouts for bonds are: **diagonal** (6), **block-diagonal**
-(upper-triangular within each 3×3 rotation/translation block, 12), or **full**
-symmetric (upper-triangular of the whole 6×6, 21). The full local block is
+(upper-triangular within each $3\times3$ rotation/translation block, 12), or
+**full** symmetric (upper-triangular of the whole $6\times6$, 21). The full local block is
 checked to be **positive definite**; a non-PD block aborts the run. Angle and
 dihedral coupling blocks are in general **not symmetric**, so all 36 entries are
 required and no PD check is applied.
@@ -277,11 +283,14 @@ by the boolean `subtract_groundstate` (metadata field `subtract groundstate`:
 `1 = X`, `0 = Y`):
 
 - **Y convention (default, `0`/`false`) — recommended.** The ground state is
-  factored out at the group level, `g_i = s_i · d_i`, and the energy is quadratic
-  in the dynamic coordinate `Y_Δ`. This is numerically robust for arbitrarily
-  large intrinsic twist (including near 180°).
+  factored out at the group level, $g_i = s_i d_i$, and the energy
+  $\beta E_\mathrm{Y} = \tfrac{1}{2}\,\bar{\mathbf{Y}}_\Delta^{\intercal} M_\mathrm{Y}\,\bar{\mathbf{Y}}_\Delta$
+  is quadratic in the dynamic coordinate $\mathbf{Y}_{\Delta i}$. This is
+  numerically robust for arbitrarily large intrinsic twist (including near
+  180°).
 - **X convention (`1`/`true`).** The ground state is subtracted additively in
-  coordinate space, `ΔX = X − X⁰`.
+  coordinate space, $\mathbf{X}_{\Delta i} = \mathbf{X}_i - \mathbf{X}_{0i}$,
+  giving $\beta E_\mathrm{X} = \tfrac{1}{2}\,\bar{\mathbf{X}}_\Delta^{\intercal} M_\mathrm{X}\,\bar{\mathbf{X}}_\Delta$.
 
 Inline coefficients always use the **Y** convention. **All interaction types
 sharing a junction must use the same convention** — this is enforced at
@@ -296,7 +305,7 @@ creates `fix rbp_lrf all rbp/lrf`. It:
 
 1. **Precomputes, once per timestep**, the triad of every bead (local + ghost)
    and, per bond, the step's euler vector and the inverse-transposed left
-   Jacobian `J_L⁻ᵀ` used to convert generalised forces to torques. The
+   Jacobian $J_L^{-\intercal}$ used to convert generalised forces to torques. The
    interaction styles read these shared quantities by pointer, avoiding
    redundant quaternion→matrix work.
 2. **Validates junction consistency** at setup: all bond, angle, and dihedral
@@ -430,9 +439,9 @@ Each line begins with an integer identifier and lists coefficients in the same
 order as the inline form:
 
 - **`Bond Coeffs`** — `id` + 6 ground state + stiffness (6 / 12 / 21 entries; a
-  full row-major 6×6 = 36 is also accepted by the parser).
-- **`Angle Coeffs` / `Dihedral Coeffs`** — `id` + 6 + 6 ground states + full 6×6
-  block (36 entries, row-major).
+  full row-major $6\times6$ = 36 is also accepted by the parser).
+- **`Angle Coeffs` / `Dihedral Coeffs`** — `id` + 6 + 6 ground states + full
+  $6\times6$ block (36 entries, row-major).
 
 ---
 
@@ -444,29 +453,33 @@ bonds and diverging as the bead separation approaches a limit. It is useful to
 prevent chain crossing / overstretch without perturbing the equilibrium
 elasticity.
 
-The three FENE parameters `K, Rc, R0` precede the ground state + stiffness
-entries in the coefficient list:
+The three FENE parameters `K Rc R0` precede the ground-state + stiffness entries
+in the coefficient list. Writing $\Delta = R_0 - R_c$, $k_\mathrm{eff} = K\Delta^2$,
+and the log argument $\rho(r) = 1 - (r-R_c)^2/\Delta^2$,
 
-```
-E_FENE(r) = 0                                             for r < Rc
-          = −½ k_eff · ln[ 1 − (r−Rc)²/Δ² ]              for Rc ≤ r < r_max
-            (linear extrapolation beyond r_max)
-with  Δ = R0 − Rc,   k_eff = K·Δ².
+```math
+E_\mathrm{FENE}(r) =
+\begin{cases}
+0, & r < R_c \\
+-\tfrac{1}{2}\, k_\mathrm{eff}\, \ln \rho(r), & R_c \le r < r_\mathrm{max} \\
+E(r_\mathrm{max}) + F(r_\mathrm{max})\,(r - r_\mathrm{max}), & r \ge r_\mathrm{max}
+\end{cases}
 ```
 
-- **`Rc`** — onset distance. Below `Rc` the term is silent (`E = F = 0`), so the
-  harmonic RBP elasticity governs small fluctuations. `C¹`-continuous at `Rc`.
-- **`R0`** — divergence radius; `E, F → ∞` as `r → R0`.
-- **`K`** — bare stiffness. Setting `Rc = 0` recovers the standard
+- **$R_c$** — onset distance. Below $R_c$ the term is silent ($E = F = 0$), so
+  the harmonic RBP elasticity governs small fluctuations; the potential is
+  $C^1$-continuous at $R_c$.
+- **$R_0$** — divergence radius; $E, F \to \infty$ as $r \to R_0$.
+- **$K$** — bare stiffness. Setting $R_c = 0$ recovers the standard
   Kremer–Grest FENE.
 
-**Robustness.** To survive integrator overshoot, the argument of the log is
-capped at `ρ_min = 0.1` (`r_max = Rc + Δ·√(1−ρ_min)`); beyond `r_max` the force
-is frozen and the energy linearly extrapolated. A throttled warning is logged
-when `ρ < ρ_min`, and a hard error is raised if the bond is far past breaking
-(`ρ ≤ −3`). FENE is **auto-deactivated** (with a warning) if `K ≤ 0` or
-`R0 ≤ Rc`; a passed `Rc < 0` is clamped to `0`. When inactive, `rbpfene`
-behaves exactly like `rbp`.
+**Robustness.** To survive integrator overshoot, the log argument is capped at
+$\rho_\mathrm{min} = 0.1$ (i.e. $r_\mathrm{max} = R_c + \Delta\sqrt{1-\rho_\mathrm{min}}$);
+beyond $r_\mathrm{max}$ the force is frozen and the energy linearly extrapolated.
+A throttled warning is logged when $\rho < \rho_\mathrm{min}$, and a hard error is
+raised if the bond is far past breaking ($\rho \le -3$). FENE is
+**auto-deactivated** (with a warning) if $K \le 0$ or $R_0 \le R_c$; a passed
+$R_c < 0$ is clamped to $0$. When inactive, `rbpfene` behaves exactly like `rbp`.
 
 See the manuscript appendix (`SISections/fene.tex`) for the full derivation.
 
