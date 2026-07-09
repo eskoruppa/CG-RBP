@@ -429,24 +429,24 @@ data.
 
 | Field | Meaning | Required |
 |-------|---------|:--------:|
-| `number of rigid bodies` | number of beads in the molecule | 1 |
-| `coupling range` | maximal range `m` (`0` = local only) | 1 |
-| `number of bonds` | number of bond terms | 1 |
-| `number of angles` | number of angle terms | 1 |
-| `number of dihedrals` | number of dihedral terms | 1 |
-| `number of bond types` | number of distinct bond parameter sets | 1 |
-| `number of angle types` | number of distinct angle parameter sets | 1 |
-| `number of dihedral types` | number of distinct dihedral parameter sets | 1 |
-| `chars per atom` | base pairs per coarse-grained bead | 1 |
-| `bond style` | expected bond style (`rbp` / `rbpfene`) | 1 |
-| `angle style` | expected angle style (`rbp`) | 1 |
-| `dihedral style` | expected dihedral style (`rbp`) | 1 |
-| `subtract groundstate` | convention: `1 = X`, `0 = Y` | 1 |
-| `seqs set` | whether per-bead sequence data is present (`1`/`0`) | 1 |
-| `seqs centered` | whether retained triads are centred in each CG block (`1`/`0`) | 1 |
-| `closed` | circular molecule (`1`/`0`) | 1 |
-| `unit length` | length unit (nm) used during generation | 1 |
-| `unit energy` | energy unit (`k_BT`) used during generation (default `1.0`) | 0 |
+| `number of rigid bodies` | number of beads in the molecule | Yes |
+| `coupling range` | maximal range `m` (`0` = local only) | Yes |
+| `number of bonds` | number of bond terms | Yes |
+| `number of angles` | number of angle terms | Yes |
+| `number of dihedrals` | number of dihedral terms | Yes |
+| `number of bond types` | number of distinct bond parameter sets | Yes |
+| `number of angle types` | number of distinct angle parameter sets | Yes |
+| `number of dihedral types` | number of distinct dihedral parameter sets | Yes |
+| `chars per atom` | base pairs per coarse-grained bead | Yes |
+| `bond style` | expected bond style (`rbp` / `rbpfene`) | Yes |
+| `angle style` | expected angle style (`rbp`) | Yes |
+| `dihedral style` | expected dihedral style (`rbp`) | Yes |
+| `subtract groundstate` | convention: `1 = X`, `0 = Y` | Yes |
+| `seqs set` | whether per-bead sequence data is present (`1`/`0`) | Yes |
+| `seqs centered` | whether retained triads are centred in each CG block (`1`/`0`) | Yes |
+| `closed` | circular molecule (`1`/`0`) | Yes |
+| `unit length` | length unit (nm) used during generation | Yes |
+| `unit energy` | energy unit (`k_BT`) used during generation (default `1.0`) | No |
 
 ### Coefficient sections
 

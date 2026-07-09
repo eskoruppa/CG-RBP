@@ -167,28 +167,6 @@ inline bool is_positive_definite(double M[6][6]) noexcept {
   return true;
 }
 
-// inline bool is_positive_definite(double M[3][3]) noexcept {
-//   constexpr int N = 3;
-//   double L[N][N] = {0};
-
-//   for (int i = 0; i < N; ++i) {
-//     for (int j = 0; j <= i; ++j) {
-//       double sum = 0.0;
-//       for (int k = 0; k < j; ++k)
-//         sum += L[i][k] * L[j][k];
-
-//       if (i == j) {
-//         double val = M[i][i] - sum;
-//         if (val <= 0.0) return false;
-//         L[i][j] = std::sqrt(val);
-//       } else {
-//         L[i][j] = (1.0 / L[j][j]) * (M[i][j] - sum);
-//       }
-//     }
-//   }
-//   return true;
-// }
-
 inline bool is_positive_definite( const double M[3][3],
                                   double sym_tol = 1e-12,
                                   double pd_tol  = 1e-15,

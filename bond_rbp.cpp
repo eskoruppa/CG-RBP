@@ -74,14 +74,7 @@ void BondRBP::compute(int eflag, int vflag) {
   double A[3], B[3];
   double torque_1[3], torque_2[3];
   double force_1[3];
-
-  // double gamma[3],mu[3];
-  // double tau1[3],tau2[3];
-  // double tau1lab[3],tau2lab[3];
-  // double Flab[3];
-  // double tau_pure[3];
-  // double levertorque[3];
-
+  
   double tmp1[3],tmp2[3];
 
   double **x = atom->x;                

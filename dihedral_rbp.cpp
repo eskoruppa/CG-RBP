@@ -208,15 +208,11 @@ void DihedralRBP::compute(int eflag, int vflag) {
       lamath::add(tmp1,tmp2,B);
 
       // compute partial E / partial Omega_Delta,b (C)
-      // lamath::mul(params[dihedral_type].Mrr_tp,Omd_a,tmp1);
-      // lamath::mul(params[dihedral_type].Mtr_tp,wd_a,tmp2);
       lamath::mul_Atx(params[dihedral_type].Mrr,Omd_a,tmp1);
       lamath::mul_Atx(params[dihedral_type].Mtr,wd_a,tmp2);
       lamath::add(tmp1,tmp2,C);
 
       // compute partial E / partial w_Delta,b (D)
-      // lamath::mul(params[dihedral_type].Mrt_tp,Omd_a,tmp1);
-      // lamath::mul(params[dihedral_type].Mtt_tp,wd_a,tmp2);
       lamath::mul_Atx(params[dihedral_type].Mrt,Omd_a,tmp1);
       lamath::mul_Atx(params[dihedral_type].Mtt,wd_a,tmp2);
       lamath::add(tmp1,tmp2,D);
@@ -302,15 +298,11 @@ void DihedralRBP::compute(int eflag, int vflag) {
       lamath::add(tmp1,tmp2,B);
 
       // compute partial E / partial Phi_Delta,b (C)
-      // lamath::mul(params[dihedral_type].Mrr_tp,Omd_a,tmp1);
-      // lamath::mul(params[dihedral_type].Mtr_tp,wd_a,tmp2);
       lamath::mul_Atx(params[dihedral_type].Mrr,Omd_a,tmp1);
       lamath::mul_Atx(params[dihedral_type].Mtr,wd_a,tmp2);
       lamath::add(tmp1,tmp2,C);
 
       // compute partial E / partial d_b (D)
-      // lamath::mul(params[dihedral_type].Mrt_tp,Omd_a,tmp1);
-      // lamath::mul(params[dihedral_type].Mtt_tp,wd_a,tmp2);
       lamath::mul_Atx(params[dihedral_type].Mrt,Omd_a,tmp1);
       lamath::mul_Atx(params[dihedral_type].Mtt,wd_a,tmp2);
       lamath::add(tmp1,tmp2,D);
@@ -413,23 +405,6 @@ void DihedralRBP::compute(int eflag, int vflag) {
       torque[id4][2] += torque_4[2];
       
     }
-
-    // // ---- DEBUG: verify ev_tally equivalence (delete this block when done) ----
-    // {
-    //   double dr32_dbg[3];
-    //   dr32_dbg[0] = x[id3][0] - x[id2][0];
-    //   dr32_dbg[1] = x[id3][1] - x[id2][1];
-    //   dr32_dbg[2] = x[id3][2] - x[id2][2];
-    //   if (domain->minimum_image_check(dr32_dbg[0], dr32_dbg[1], dr32_dbg[2]))
-    //     domain->minimum_image(FLERR, dr32_dbg[0], dr32_dbg[1], dr32_dbg[2]);
-
-    //   verify_ev_tally(id1, id2, id3, id4,
-    //                   nlocal, newton_bond,
-    //                   0.0,
-    //                   force_1, force_2, force_3, force_4,
-    //                   dr_a, dr_b, dr32_dbg);
-    // }
-    // // ---- END DEBUG ----
 
     if (evflag) {
 

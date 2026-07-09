@@ -202,15 +202,11 @@ void AngleRBP::compute(int eflag, int vflag) {
       lamath::add(tmp1,tmp2,B);
 
       // compute partial E / partial Omega_Delta,b (C)
-      // lamath::mul(params[angle_type].Mrr_tp,Omd_a,tmp1);
-      // lamath::mul(params[angle_type].Mtr_tp,wd_a,tmp2);
       lamath::mul_Atx(params[angle_type].Mrr,Omd_a,tmp1);
       lamath::mul_Atx(params[angle_type].Mtr,wd_a,tmp2);
       lamath::add(tmp1,tmp2,C);
 
       // compute partial E / partial w_Delta,b (D)
-      // lamath::mul(params[angle_type].Mrt_tp,Omd_a,tmp1);
-      // lamath::mul(params[angle_type].Mtt_tp,wd_a,tmp2);
       lamath::mul_Atx(params[angle_type].Mrt,Omd_a,tmp1);
       lamath::mul_Atx(params[angle_type].Mtt,wd_a,tmp2);
       lamath::add(tmp1,tmp2,D);
@@ -296,15 +292,11 @@ void AngleRBP::compute(int eflag, int vflag) {
       lamath::add(tmp1,tmp2,B);
 
       // compute partial E / partial Phi_Delta,b (C)
-      // lamath::mul(params[angle_type].Mrr_tp,Omd_a,tmp1);
-      // lamath::mul(params[angle_type].Mtr_tp,wd_a,tmp2);
       lamath::mul_Atx(params[angle_type].Mrr,Omd_a,tmp1);
       lamath::mul_Atx(params[angle_type].Mtr,wd_a,tmp2);
       lamath::add(tmp1,tmp2,C);
 
       // compute partial E / partial d_b (D)
-      // lamath::mul(params[angle_type].Mrt_tp,Omd_a,tmp1);
-      // lamath::mul(params[angle_type].Mtt_tp,wd_a,tmp2);
       lamath::mul_Atx(params[angle_type].Mrt,Omd_a,tmp1);
       lamath::mul_Atx(params[angle_type].Mtt,wd_a,tmp2);
       lamath::add(tmp1,tmp2,D);
