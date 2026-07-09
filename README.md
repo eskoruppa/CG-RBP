@@ -420,35 +420,33 @@ the sequence and connectivity used to build the `.data` file. LAMMPS reads
 
 ### Metadata (leading `key: value` lines)
 
-In the shipped configuration (`parse_rbp.h`) the following fields are **required**
-— a missing field aborts the run. Coefficient identifiers must start at `1` and
-be contiguous, and the counts/styles are cross-checked against the actual data.
+The recognised metadata fields are listed below. A field with **Required = 1**
+must be present or the run aborts (in the shipped `parse_rbp.h` configuration); a
+`Required = 0` field falls back to a default when absent, and unknown keys are
+ignored for forward compatibility. Coefficient identifiers must start at `1` and
+be contiguous, and the counts and styles are cross-checked against the actual
+data.
 
-| Field | Meaning |
-|-------|---------|
-| `number of rigid bodies` | number of beads in the molecule |
-| `coupling range` | maximal range `m` (`0` = local only) |
-| `number of bonds` / `angles` / `dihedrals` | number of terms of each kind |
-| `number of bond types` / `angle types` / `dihedral types` | number of distinct parameter sets |
-| `chars per atom` | base pairs per coarse-grained bead |
-| `bond style` / `angle style` / `dihedral style` | expected style (`rbp` / `rbpfene`) |
-| `subtract groundstate` | convention: `1 = X`, `0 = Y` |
-| `seqs set` | whether per-bead sequence data is present (`1`/`0`) |
-| `seqs centered` | whether retained triads are centred in each CG block (`1`/`0`) |
-| `closed` | circular molecule (`1`/`0`) |
-| `unit length` | length unit (nm) used during generation |
-
-The only **optional** field is `unit energy` (energy unit in `k_BT`, default
-`1.0`). Unknown metadata keys are ignored for forward compatibility.
-
-> ⚠️ **Documentation note.** This required-field list is authoritative to the
-> parser and is broader than the table in the manuscript SI: `seqs set`,
-> `seqs centered`, `closed`, and `unit length` are **mandatory** in this build
-> (only `unit energy` is optional). A database written to match the manuscript
-> table alone would abort with e.g. *"Missing required metadata 'seqs set'"*.
-> Databases produced by cgRBPTools include all of these fields and load cleanly.
-> To relax a requirement, comment out the corresponding `RBP_META_REQUIRE_*`
-> define in `parse_rbp.h` and recompile.
+| Field | Meaning | Required |
+|-------|---------|:--------:|
+| `number of rigid bodies` | number of beads in the molecule | 1 |
+| `coupling range` | maximal range `m` (`0` = local only) | 1 |
+| `number of bonds` | number of bond terms | 1 |
+| `number of angles` | number of angle terms | 1 |
+| `number of dihedrals` | number of dihedral terms | 1 |
+| `number of bond types` | number of distinct bond parameter sets | 1 |
+| `number of angle types` | number of distinct angle parameter sets | 1 |
+| `number of dihedral types` | number of distinct dihedral parameter sets | 1 |
+| `chars per atom` | base pairs per coarse-grained bead | 1 |
+| `bond style` | expected bond style (`rbp` / `rbpfene`) | 1 |
+| `angle style` | expected angle style (`rbp`) | 1 |
+| `dihedral style` | expected dihedral style (`rbp`) | 1 |
+| `subtract groundstate` | convention: `1 = X`, `0 = Y` | 1 |
+| `seqs set` | whether per-bead sequence data is present (`1`/`0`) | 1 |
+| `seqs centered` | whether retained triads are centred in each CG block (`1`/`0`) | 1 |
+| `closed` | circular molecule (`1`/`0`) | 1 |
+| `unit length` | length unit (nm) used during generation | 1 |
+| `unit energy` | energy unit (`k_BT`) used during generation (default `1.0`) | 0 |
 
 ### Coefficient sections
 
