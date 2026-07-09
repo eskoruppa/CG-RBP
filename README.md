@@ -61,22 +61,33 @@ energy is
 ```
 
 with $\beta = 1/k_\mathrm{B}T$ and $M$ a banded stiffness matrix. The package
-realises the $6\times6$ blocks of $M$ as standard LAMMPS bonded interactions,
-according to how many beads each coupling involves:
+realises the 6×6 blocks of $M$ as standard LAMMPS bonded interactions, according
+to how many beads each coupling involves. The diagonal, first-, and
+higher-off-diagonal blocks contribute
 
-| Block of $M$ | Contribution to $\beta E$ | Coupling | LAMMPS object | Style(s) |
-|---|---|---|---|---|
-| $M^{(0)}_i$ (diagonal) | $\tfrac{1}{2}\,\mathbf{X}_{\Delta i}^{\intercal} M^{(0)}_i \mathbf{X}_{\Delta i}$ | local, 2 beads | **bond** | `rbp`, `rbpfene` |
-| $M^{(1)}_i$ (1st band) | $\mathbf{X}_{\Delta i}^{\intercal} M^{(1)}_i \mathbf{X}_{\Delta,i+1}$ | range-1, 3 beads | **angle** | `rbp` |
-| $M^{(m)}_i,\ m\ge2$ | $\mathbf{X}_{\Delta i}^{\intercal} M^{(m)}_i \mathbf{X}_{\Delta,i+m}$ | range-$m$, 4 beads | **dihedral** | `rbp` |
+```math
+\begin{aligned}
+\beta E^{(0)}_i &= \tfrac{1}{2}\,\mathbf{X}_{\Delta i}^{\intercal} M^{(0)}_i \mathbf{X}_{\Delta i}, \\
+\beta E^{(1)}_i &= \mathbf{X}_{\Delta i}^{\intercal} M^{(1)}_i \mathbf{X}_{\Delta,i+1}, \\
+\beta E^{(m)}_i &= \mathbf{X}_{\Delta i}^{\intercal} M^{(m)}_i \mathbf{X}_{\Delta,i+m}\quad (m \ge 2),
+\end{aligned}
+```
+
+and map onto bonds, angles, and dihedrals respectively:
+
+| Block | Coupling | LAMMPS object | Style(s) |
+|---|---|---|---|
+| M⁽⁰⁾ (diagonal) | local, 2 beads | **bond** | `rbp`, `rbpfene` |
+| M⁽¹⁾ (first off-diagonal) | range-1, 3 beads | **angle** | `rbp` |
+| M⁽ᵐ⁾, m ≥ 2 (higher) | range-m, 4 beads | **dihedral** | `rbp` |
 
 A local coupling relates the two triads of one junction → a **bond**. A
 range-$m$ coupling correlates two junctions, $\mathbf{X}_{\Delta i}$ and
 $\mathbf{X}_{\Delta,i+m}$; for $m = 1$ they share the central triad (three beads
 → an **angle**), and for $m \ge 2$ all four beads are distinct (a **dihedral**
-over beads $i, i+1, i+m, i+m+1$). Because an angle or dihedral carries
-two junctions, its coefficients specify **two** ground-state vectors and the
-**full (non-symmetric) $6\times6$ coupling block**.
+over beads $i, i+1, i+m, i+m+1$). Because an angle or dihedral carries two
+junctions, its coefficients specify **two** ground-state vectors and the **full
+(non-symmetric) 6×6 coupling block**.
 
 The elastic torques on the oriented beads are evaluated in the Lie-algebra
 "force-wrench" formulation; the per-bead triad and inverse-transposed left
@@ -89,14 +100,14 @@ Jacobian needed for this are precomputed once per timestep by the auxiliary
 
 | File | Purpose |
 |------|---------|
-| `bond_rbp.cpp/.h`      | Bond style `rbp` — local (diagonal) block $M^{(0)}$ |
+| `bond_rbp.cpp/.h`      | Bond style `rbp` — local (diagonal) block M⁽⁰⁾ |
 | `bond_rbp_fene.cpp/.h` | Bond style `rbpfene` — `rbp` plus a built-in one-sided FENE non-extensibility term |
-| `angle_rbp.cpp/.h`     | Angle style `rbp` — range-1 coupling block $M^{(1)}$ |
-| `dihedral_rbp.cpp/.h`  | Dihedral style `rbp` — range-$m$ coupling blocks $M^{(m)},\ m\ge2$ |
+| `angle_rbp.cpp/.h`     | Angle style `rbp` — range-1 coupling block M⁽¹⁾ |
+| `dihedral_rbp.cpp/.h`  | Dihedral style `rbp` — range-m coupling blocks M⁽ᵐ⁾, m ≥ 2 |
 | `fix_rbp_lrf.cpp/.h`   | Auxiliary fix `rbp/lrf` — per-timestep triads / local reference frames (auto-created) |
 | `parse_rbp.cpp/.h`     | Reader for the `.db` parameter database (metadata + coefficient sections) |
 | `so3.h`                | Header-only SO(3)/SE(3) utilities (Rodrigues exp/log, left Jacobian, triad↔euler) |
-| `lamath.h`             | Header-only small $3\times3$ / 3-vector linear algebra and positive-definiteness (Cholesky) checks |
+| `lamath.h`             | Header-only small 3×3 / 3-vector linear algebra and positive-definiteness (Cholesky) checks |
 | `install.sh`           | LAMMPS package install/uninstall hook (checks MOLECULE + ASPHERE) |
 
 The companion Python package, the manuscript sources, and research notes
@@ -250,14 +261,14 @@ stiffness entries are given in **row-major** order.
 
 | Style | Argument count | Layout |
 |-------|----------------|--------|
-| `bond rbp`     | **12 / 18 / 27** | 6 ground state + $M^{(0)}$ as 6 diagonal, 12 block-diagonal, or 21 upper-triangular entries |
+| `bond rbp`     | **12 / 18 / 27** | 6 ground state + M⁽⁰⁾ as 6 diagonal, 12 block-diagonal, or 21 upper-triangular entries |
 | `bond rbpfene` | **15 / 21 / 30** | 3 FENE (`K Rc R0`) + the 12/18/27 above |
-| `angle rbp`    | **48** | 6 + 6 ground states + full $6\times6$ block (36 entries) |
-| `dihedral rbp` | **48** | 6 + 6 ground states + full $6\times6$ block (36 entries) |
+| `angle rbp`    | **48** | 6 + 6 ground states + full 6×6 block (36 entries) |
+| `dihedral rbp` | **48** | 6 + 6 ground states + full 6×6 block (36 entries) |
 
 The three `M` layouts for bonds are: **diagonal** (6), **block-diagonal**
-(upper-triangular within each $3\times3$ rotation/translation block, 12), or
-**full** symmetric (upper-triangular of the whole $6\times6$, 21). The full local block is
+(upper-triangular within each 3×3 rotation/translation block, 12), or **full**
+symmetric (upper-triangular of the whole 6×6, 21). The full local block is
 checked to be **positive definite**; a non-PD block aborts the run. Angle and
 dihedral coupling blocks are in general **not symmetric**, so all 36 entries are
 required and no PD check is applied.
@@ -439,9 +450,9 @@ Each line begins with an integer identifier and lists coefficients in the same
 order as the inline form:
 
 - **`Bond Coeffs`** — `id` + 6 ground state + stiffness (6 / 12 / 21 entries; a
-  full row-major $6\times6$ = 36 is also accepted by the parser).
+  full row-major 6×6 = 36 is also accepted by the parser).
 - **`Angle Coeffs` / `Dihedral Coeffs`** — `id` + 6 + 6 ground states + full
-  $6\times6$ block (36 entries, row-major).
+  6×6 block (36 entries, row-major).
 
 ---
 
@@ -479,7 +490,7 @@ beyond $r_\mathrm{max}$ the force is frozen and the energy linearly extrapolated
 A throttled warning is logged when $\rho < \rho_\mathrm{min}$, and a hard error is
 raised if the bond is far past breaking ($\rho \le -3$). FENE is
 **auto-deactivated** (with a warning) if $K \le 0$ or $R_0 \le R_c$; a passed
-$R_c < 0$ is clamped to $0$. When inactive, `rbpfene` behaves exactly like `rbp`.
+$R_c < 0$ is clamped to zero. When inactive, `rbpfene` behaves exactly like `rbp`.
 
 See the manuscript appendix (`SISections/fene.tex`) for the full derivation.
 
