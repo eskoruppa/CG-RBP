@@ -215,8 +215,8 @@ atom_style      hybrid molecular ellipsoid
 read_data       model.data
 
 bond_style      rbpfene
-#          type  K    Rc   R0  |  ground (rot,trans)     |  6 diagonal moduli
-bond_coeff  *   500  1.15 1.3    0.0 0.0 0.0 0.0 0.0 1.0    11.7647 11.7647 29.41 200 200 200
+#          type  K    Rc   R0 | ground state (rot,trans) | 6 diagonal moduli
+bond_coeff  *   500  1.15 1.3   0.0 0.0 0.0 0.0 0.0 1.0    11.7647 11.7647 29.41 200 200 200
 
 fix     1 all nve/asphere
 fix     2 all langevin 1.0 1.0 0.1 12345 angmom 10.0
