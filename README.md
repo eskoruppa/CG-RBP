@@ -125,19 +125,38 @@ CG-RBP is an optional LAMMPS package. It **requires** the `MOLECULE` package
 (bond/angle/dihedral topology) and the `ASPHERE` package (ellipsoidal particles
 and rigid-body integrators). Both are mandatory and are checked by `install.sh`.
 
+CG-RBP ships as the package directory `src/CG-RBP/` in your LAMMPS tree. Build it
+with either build system, enabling it together with its two dependencies.
+
+### With CMake
+
+From the LAMMPS root directory:
+
+```bash
+mkdir build && cd build
+cmake -D PKG_MOLECULE=yes \
+      -D PKG_ASPHERE=yes \
+      -D PKG_CG-RBP=yes \
+      -D BUILD_MPI=yes \
+      ../cmake
+cmake --build . -j 8
+```
+
+This produces the `lmp` executable in `build/`. Use `-D BUILD_MPI=no` for a
+serial build.
+
+### With traditional make
+
 From the LAMMPS `src/` directory:
 
 ```bash
-# copy CG-RBP into src/ (if not already present)
-# then enable it together with its dependencies:
-make yes-molecule yes-asphere yes-cg-rbp
-
-# build as usual, e.g. with MPI:
-make mpi
+make yes-molecule yes-asphere yes-cg-rbp   # install the package + dependencies
+make mpi                                     # or: make serial
 ```
 
-The CMake build works the same way — enable `PKG_MOLECULE`, `PKG_ASPHERE`, and
-`PKG_CG-RBP`.
+`make yes-cg-rbp` invokes `install.sh`, which copies the CG-RBP sources into
+`src/` and aborts if MOLECULE or ASPHERE is missing. The executable is
+`src/lmp_mpi` (or `src/lmp_serial`).
 
 ---
 
@@ -196,16 +215,15 @@ atom_style      hybrid molecular ellipsoid
 read_data       model.data
 
 bond_style      rbpfene
-#          type  K    Rc   R0    |  ground state Y0 (rot,trans)  |  6 diagonal moduli
-bond_coeff  *   500  1.15 1.3  &
-            0.0 0.0 0.0 0.0 0.0 1.0 &
-            11.7647 11.7647 29.41 200 200 200
+#          type  K    Rc   R0  |  ground (rot,trans)     |  6 diagonal moduli
+bond_coeff  *   500  1.15 1.3    0.0 0.0 0.0 0.0 0.0 1.0    11.7647 11.7647 29.41 200 200 200
 
 fix     1 all nve/asphere
-fix     2 all langevin 1.0 1.0 1.0 12345 angmom 3.0
+fix     2 all langevin 1.0 1.0 0.1 12345 angmom 10.0
 
-timestep        0.005
 thermo          1000
+
+timestep        0.01
 run             1000000
 ```
 
