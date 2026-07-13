@@ -48,7 +48,6 @@ FixRBPLRF::FixRBPLRF(LAMMPS *lmp, int narg, char **arg) :
 {
   // forward comm: fwd_euler(3) + fwd_Jinvtp(9) = 12
   comm_forward = 12;
-
   peratom_flag = 0;
 
   FixRBPLRF::grow_arrays(atom->nmax);

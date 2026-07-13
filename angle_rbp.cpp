@@ -428,16 +428,23 @@ double AngleRBP::single(int type, int i1, int i2, int i3) {
 
 void AngleRBP::coeff(int narg, char **arg) {
 
-  // check conditions for properly formated arg !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // may not be necessary
+  // require at least the angle type id; remaining args are validated below
+  // (numeric values by utils::numeric, coefficient counts by assign_coeffs)
+  if (narg < 1)
+    error->all(FLERR, "Illegal angle_coeff command: missing angle type");
 
   if (!allocated) allocate();
 
   int ilo, ihi;
   utils::bounds(FLERR, arg[0], 1, atom->nangletypes, ilo, ihi, error);
 
-  // load from database file
-  if (narg == 4 && strcmp(arg[1], "dbfile") == 0) {
+  // load from database file: keyed on the dbfile keyword (not the arg count) so a
+  // mistyped dbfile call reports a useful error instead of "dbfile is not a number"
+  if (narg >= 2 && strcmp(arg[1], "dbfile") == 0) {
+    if (narg != 4)
+      error->all(FLERR,
+        "Illegal angle_coeff dbfile command: expected '<type> dbfile <filename> <id>'");
+
 
     RBPDatabase db(lmp, error);
     db.read(arg[2]);

@@ -399,16 +399,23 @@ double BondRBPFene::single(int i, double rsq, int itype, int jtype, double &ffor
 void BondRBPFene::coeff(int narg, char **arg)
 {
 
-  // check conditions for properly formated arg !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // may not be necessary
+  // require at least the bond type id; remaining args are validated below
+  // (numeric values by utils::numeric, coefficient counts by assign_coeffs)
+  if (narg < 1)
+    error->all(FLERR, "Illegal bond_coeff command: missing bond type");
 
   if (!allocated) allocate();
 
   int ilo, ihi;
   utils::bounds(FLERR, arg[0], 1, atom->nbondtypes, ilo, ihi, error);
 
-  // load from database file
-  if (narg == 4 && strcmp(arg[1], "dbfile") == 0) {
+  // load from database file: keyed on the dbfile keyword (not the arg count) so a
+  // mistyped dbfile call reports a useful error instead of "dbfile is not a number"
+  if (narg >= 2 && strcmp(arg[1], "dbfile") == 0) {
+    if (narg != 4)
+      error->all(FLERR,
+        "Illegal bond_coeff dbfile command: expected '<type> dbfile <filename> <id>'");
+
 
     RBPDatabase db(lmp, error);
     db.read(arg[2]);

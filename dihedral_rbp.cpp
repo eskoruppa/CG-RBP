@@ -466,16 +466,23 @@ void DihedralRBP::compute(int eflag, int vflag) {
 
 void DihedralRBP::coeff(int narg, char **arg) {
 
-  // check conditions for properly formated arg !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // may not be necessary
+  // require at least the dihedral type id; remaining args are validated below
+  // (numeric values by utils::numeric, coefficient counts by assign_coeffs)
+  if (narg < 1)
+    error->all(FLERR, "Illegal dihedral_coeff command: missing dihedral type");
 
   if (!allocated) allocate();
 
   int ilo, ihi;
   utils::bounds(FLERR, arg[0], 1, atom->ndihedraltypes, ilo, ihi, error);
 
-  // load from database file
-  if (narg == 4 && strcmp(arg[1], "dbfile") == 0) {
+  // load from database file: keyed on the dbfile keyword (not the arg count) so a
+  // mistyped dbfile call reports a useful error instead of "dbfile is not a number"
+  if (narg >= 2 && strcmp(arg[1], "dbfile") == 0) {
+    if (narg != 4)
+      error->all(FLERR,
+        "Illegal dihedral_coeff dbfile command: expected '<type> dbfile <filename> <id>'");
+
 
     RBPDatabase db(lmp, error);
     db.read(arg[2]);
