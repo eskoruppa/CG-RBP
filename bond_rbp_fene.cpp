@@ -258,7 +258,7 @@ void BondRBPFene::compute(int eflag, int vflag) {
     //-------------------------------------------------------------//
     
     // FENE force (lab frame) and energy for this bond
-    double Flab_fene[3] = {0.0, 0.0, 0.0};
+    // double Flab_fene[3] = {0.0, 0.0, 0.0};
     double E_fene = 0.0;
     
     if (params[bond_type].fene_active) {
@@ -286,6 +286,8 @@ void BondRBPFene::compute(int eflag, int vflag) {
         // Overstretch protection logic, adapted from your snippet
         if (rlogarg < rlogarg_min) {
           // throttle: emit at most one warning per RBP_FENE_WARN_INTERVAL steps
+
+          #ifdef RBP_FENE_WARN
           if (update->ntimestep >= last_fene_warn_step + RBP_FENE_WARN_INTERVAL) {
             error->warning(FLERR, "RBP FENE bond too long: {} {} {} {}",
               update->ntimestep, atom->tag[id1],
@@ -307,11 +309,13 @@ void BondRBPFene::compute(int eflag, int vflag) {
               }
               fprintf(screen, "\n");
             }
-            if (!lamath::is_positive_definite(params[bond_type].Mmat)) {
-              error->all(FLERR, "Stiffness matrix M is not positive definite");
-            }
+            // if (!lamath::is_positive_definite(params[bond_type].Mmat)) {
+            //   error->all(FLERR, "Stiffness matrix M is not positive definite");
+            // }
             error->one(FLERR, "Bad RBP FENE bond: r = {}, w = {} {} {}",r,w[0],w[1],w[2]);
           }
+          #endif
+
           rlogarg = rlogarg_min;
           
           // if overstretched F(r)=F(r_max)=F_max, E(r)=E(r_max)+F_max*(r-r_max)
@@ -424,7 +428,7 @@ void BondRBPFene::coeff(int narg, char **arg)
     if (db.metadata().bond_style != RBPBOND_FENE_STYLE) {
       error->all(FLERR, 
         "Bond style mismatch: database specifies '" + db.metadata().bond_style + 
-        "' but using bond_style rbp/fene");
+        "' but using bond_style rbpfene");
     }
 
     int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
@@ -455,13 +459,13 @@ void BondRBPFene::init_style() {
 
   // Ensure ellipsoidal atoms are being used
   if (!atom->ellipsoid_flag)
-    error->all(FLERR, "Bond style rbp requires atom style with ellipsoids");
+    error->all(FLERR, "Bond style rbpfene requires atom style with ellipsoids");
 
   if (domain->dimension != 3)
-    error->all(FLERR, "Bond style rbp requires a 3D simulation");
+    error->all(FLERR, "Bond style rbpfene requires a 3D simulation");
 
   if (force->special_lj[1] != 0.0) {
-    if (comm->me == 0) error->warning(FLERR, "Use special bonds = 0,x,x with bond style rbp");
+    if (comm->me == 0) error->warning(FLERR, "Use special bonds = 0,x,x with bond style rbpfene");
   }
 
   #ifdef BOND_RBP_FENE_PRECOMPUTE_ACTIVE
@@ -587,8 +591,8 @@ void BondRBPFene::allocate() {
   allocated = 1;
   int n = atom->nbondtypes;
 
-  memory->create(params, n + 1, "bond:rbp:params");
-  memory->create(setflag, n+1, "bond:rbp:setflag");
+  memory->create(params, n + 1, "bond:rbpfene:params");
+  memory->create(setflag, n+1, "bond:rbpfene:setflag");
   for (int i = 0; i <= n; i++) setflag[i] = 0;
 }
 
@@ -685,7 +689,6 @@ void BondRBPFene::assign_coeffs(int bond_type, const std::vector<double> &args, 
   // -------------------------------------------------------------------
   // set everything by assigning upper triangular coefficients
   if (narg == opt3) {
-    // int k = 6;
     for (int i = 0; i < 6; i++) {
       for (int j = i; j < 6; j++) {
         params[bond_type].Mmat[i][j] = args[argid++];

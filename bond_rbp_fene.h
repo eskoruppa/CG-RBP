@@ -28,7 +28,9 @@ BondStyle(rbpfene,BondRBPFene);
 #define BOND_RBP_FENE_PRECOMPUTE_ACTIVE
 // number of timesteps to suppress the "bond too long" warning after one is
 // emitted (avoids per-step, per-bond log flooding near the overstretch cap)
+#define RBP_FENE_WARN
 #define RBP_FENE_WARN_INTERVAL 10000
+
 // clang-format on
 
 #include <unordered_map>

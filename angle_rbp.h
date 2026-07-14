@@ -64,16 +64,16 @@ class AngleRBP : public Angle {
     double Mmat[6][6];      // Stiffness matrix
     double Mrr[3][3];       // rotational part of M
     double Mtt[3][3];       // translational part of M
-    double Mrt[3][3];       // bottom-left cross terms
-    double Mtr[3][3];       // top-right cross terms
-    double Mrr_tp[3][3];    // rotational part of M
-    double Mtt_tp[3][3];    // translational part of M
-    double Mrt_tp[3][3];    // bottom-left cross terms
-    double Mtr_tp[3][3];    // top-right cross terms
+    double Mrt[3][3];       // top-right cross terms
+    double Mtr[3][3];       // bottom-left cross terms
+    double Mrr_tp[3][3];    // transpose of Mrr
+    double Mtt_tp[3][3];    // transpose of Mtt
+    double Mrt_tp[3][3];    // transpose of Mrt
+    double Mtr_tp[3][3];    // transpose of Mtr
     bool   subtract_groundstate;
    //  double equidist;
   };
-  RBPParams *params;  // indexed by bond type
+  RBPParams *params;  // indexed by angle type
   void allocate();
 
   void assign_coeffs(int angle_type, const std::vector<double> &args, bool subtract_groundstate = false);

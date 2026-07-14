@@ -252,9 +252,6 @@ void DihedralRBP::compute(int eflag, int vflag) {
       lamath::mul(T3,tmp1,tmp2);
       lamath::signflip(tmp2,torque_4);
 
-      // lamath::print_mat3_lammps(screen, "Jinvtp_a", Jinvtp_a);
-      // lamath::print_mat3_lammps(screen, "Jinvtp_b", Jinvtp_b);
-
     }
     else {
       //-------------------------------------------------------------//
@@ -350,9 +347,6 @@ void DihedralRBP::compute(int eflag, int vflag) {
       MathExtra::cross3(w_b,tmp1,tmp2);
       lamath::mul(T3,tmp2,torque_3);
       lamath::add_to(torque_3,tmp3);
-
-      // lamath::print_mat3_lammps(screen, "Jinvtp_a", Jinvtp_a);
-      // lamath::print_mat3_lammps(screen, "Jinvtp_b", Jinvtp_b);
 
     }
 

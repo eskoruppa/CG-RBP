@@ -74,10 +74,10 @@ class DihedralRBP : public Dihedral {
       bool   subtract_groundstate;
       //  double equidist;
    };
-   RBPParams *params;  // indexed by bond type
+   RBPParams *params;  // indexed by dihedral type
    void allocate();
 
-   void assign_coeffs(int angle_type, const std::vector<double> &args, bool subtract_groundstate = false);
+   void assign_coeffs(int dihedral_type, const std::vector<double> &args, bool subtract_groundstate = false);
    void compute_derived_(int dihedral_type);
    void ev_tally_rbp(int i1, int i2, int i3, int i4, int nlocal, int newton_bond,
                 double edihedral, const double *force_1, const double *force_3,

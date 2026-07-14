@@ -210,7 +210,7 @@ angle/dihedral terms:
 units           lj
 dimension       3
 boundary        p p p
-atom_style      hybrid molecular ellipsoid
+atom_style      hybrid ellipsoid molecular 
 
 read_data       model.data
 
