@@ -21,6 +21,12 @@
 #include <algorithm>  // for std::max
 #include "lammps.h"
 
+// clang-format off
+// scale-relative threshold above which a stiffness matrix counts as
+// non-symmetric (odd elastic); below it the matrix is symmetrized
+#define RBP_ODD_ASYM_TOL 1e-10
+// clang-format on
+
 namespace lamath {
 
 static inline void print_mat3_lammps(FILE *fp, const char *name, double M[3][3])
@@ -145,8 +151,60 @@ inline double det(const double mat[3][3]) noexcept {
       + mat[0][2] * (mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]);
 }
 
-inline bool is_positive_definite(double M[6][6]) noexcept {
+// Largest scale-relative asymmetry, max_ij |M_ij - M_ji| / max(1,|M_ij|,|M_ji|).
+// Exactly zero for a symmetric matrix. Reports the offending entry via i/j.
+inline double max_asymmetry(const double M[6][6], int *iout = nullptr,
+                            int *jout = nullptr) noexcept
+{
+  double worst = 0.0;
+  int wi = 0, wj = 0;
+  for (int i = 0; i < 6; ++i) {
+    for (int j = i + 1; j < 6; ++j) {
+      const double a = M[i][j], b = M[j][i];
+      const double scale = std::max(1.0, std::max(std::abs(a), std::abs(b)));
+      const double rel = std::abs(a - b) / scale;
+      if (rel > worst) { worst = rel; wi = i; wj = j; }
+    }
+  }
+  if (iout) *iout = wi;
+  if (jout) *jout = wj;
+  return worst;
+}
+
+// Largest antisymmetric (odd) component, max_ij |M_ij - M_ji| / 2.
+inline double max_odd_modulus(const double M[6][6]) noexcept
+{
+  double worst = 0.0;
+  for (int i = 0; i < 6; ++i)
+    for (int j = i + 1; j < 6; ++j)
+      worst = std::max(worst, 0.5 * std::abs(M[i][j] - M[j][i]));
+  return worst;
+}
+
+// Replace M by its symmetric part. Exact no-op on an already-symmetric matrix
+// (0.5*(a+a) == a in IEEE754), so Hamiltonian parameter sets are untouched.
+inline void symmetrize(double M[6][6]) noexcept
+{
+  for (int i = 0; i < 6; ++i) {
+    for (int j = i + 1; j < 6; ++j) {
+      const double s = 0.5 * (M[i][j] + M[j][i]);
+      M[i][j] = s;
+      M[j][i] = s;
+    }
+  }
+}
+
+// Positive-definiteness of the symmetric part Ms = (M + M^T)/2. For symmetric M
+// this is the ordinary PD test, bit-for-bit. For an odd-elastic M the
+// antisymmetric part stores no energy and does not destabilise the even sector,
+// so Ms is the object to test.
+inline bool is_positive_definite(const double M[6][6]) noexcept {
   constexpr int N = 6;
+  double A[N][N];
+  for (int i = 0; i < N; ++i)
+    for (int j = 0; j < N; ++j)
+      A[i][j] = 0.5 * (M[i][j] + M[j][i]);
+
   double L[N][N] = {0};
 
   for (int i = 0; i < N; ++i) {
@@ -156,11 +214,11 @@ inline bool is_positive_definite(double M[6][6]) noexcept {
         sum += L[i][k] * L[j][k];
 
       if (i == j) {
-        double val = M[i][i] - sum;
+        double val = A[i][i] - sum;
         if (val <= 0.0) return false;
         L[i][j] = std::sqrt(val);
       } else {
-        L[i][j] = (1.0 / L[j][j]) * (M[i][j] - sum);
+        L[i][j] = (1.0 / L[j][j]) * (A[i][j] - sum);
       }
     }
   }

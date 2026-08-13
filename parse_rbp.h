@@ -47,11 +47,13 @@
 #define RBP_META_REQUIRE_CLOSED
 #define RBP_META_REQUIRE_UNIT_LENGTH
 // #define RBP_META_REQUIRE_UNIT_ENERGY
+// #define RBP_META_REQUIRE_ODD
 // ============================================================
 // Default values for optional metadata fields.
 // Applied when a field is absent and not mandatory.
 // ============================================================
 #define RBP_META_DEFAULT_SUBTRACT_GROUNDSTATE false
+#define RBP_META_DEFAULT_ODD                  false
 #define RBP_META_DEFAULT_SEQS_SET             false
 #define RBP_META_DEFAULT_SEQS_CENTERED        false
 #define RBP_META_DEFAULT_CLOSED               false
@@ -75,6 +77,7 @@
 #define RBP_META_IDENTIFIER_ANGLE_STYLE "angle style"
 #define RBP_META_IDENTIFIER_DIHEDRAL_STYLE "dihedral style"
 #define RBP_META_IDENTIFIER_SUBTRACT_GROUNDSTATE "subtract groundstate"
+#define RBP_META_IDENTIFIER_ODD "odd elasticity"
 #define RBP_META_IDENTIFIER_SEQS_SET "seqs set"
 #define RBP_META_IDENTIFIER_SEQS_CENTERED "seqs centered"
 #define RBP_META_IDENTIFIER_CLOSED "closed"
@@ -113,6 +116,7 @@ struct RBPMetadata {
 
   // flags
   bool subtract_groundstate;
+  bool odd;              // file declares non-symmetric (odd elastic) blocks
   bool seqs_set;
   bool seqs_centered;
   bool closed;
@@ -127,6 +131,7 @@ struct RBPMetadata {
       coupling_range(-1), chars_per_atom(-1),
       bond_style(""), angle_style(""), dihedral_style(""),
       subtract_groundstate(RBP_META_DEFAULT_SUBTRACT_GROUNDSTATE),
+      odd(RBP_META_DEFAULT_ODD),
       seqs_set(RBP_META_DEFAULT_SEQS_SET),
       seqs_centered(RBP_META_DEFAULT_SEQS_CENTERED),
       closed(RBP_META_DEFAULT_CLOSED),

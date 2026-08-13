@@ -74,6 +74,7 @@ class BondRBPFene : public Bond {
       double Mtr_tr[3][3];   // top-right cross terms
       double equidist;
       bool   subtract_groundstate;
+      bool   odd_active;     // M is non-symmetric: non-Hamiltonian dynamics
       double K;
       double Rc;
       double R0;
@@ -84,15 +85,19 @@ class BondRBPFene : public Bond {
    };
 
    RBPParams *params;  // indexed by bond type
+   bool odd_requested;          // 'odd' keyword was given on any bond_coeff
    bigint last_fene_warn_step;  // last step a "bond too long" warning was emitted
    void allocate();
   
-   void assign_coeffs(int bond_type, const std::vector<double> &args, bool subtract_groundstate = false);
+   void assign_coeffs(int bond_type, const std::vector<double> &args, bool subtract_groundstate = false,
+                      bool odd_permitted = false);
    void set_static_(int bond_type);
    void set_equidist(int bond_type);
    void zero_stiffmat_(int bond_type);
    void set_lower_triangle_(int bond_type);
+   void check_symmetry_(int bond_type, bool odd_permitted);
    void assign_blocks_(int bond_type);
+   void announce_odd_();
 
 #ifdef BOND_RBP_FENE_PRECOMPUTE_ACTIVE
    class FixRBPLRF *fix_lrf;

@@ -110,6 +110,7 @@ void RBPDatabase::parse_file(const std::string &filename)
 
   // Presence flags for fields that have no integer sentinel
   bool seen_subtract_groundstate = false;
+  bool seen_odd                  = false;
   bool seen_seqs_set             = false;
   bool seen_seqs_centered        = false;
   bool seen_closed               = false;
@@ -157,6 +158,7 @@ void RBPDatabase::parse_file(const std::string &filename)
         else if (key == RBP_META_IDENTIFIER_ANGLE_STYLE)            db_metadata.angle_style = value;
         else if (key == RBP_META_IDENTIFIER_DIHEDRAL_STYLE)         db_metadata.dihedral_style = value;
         else if (key == RBP_META_IDENTIFIER_SUBTRACT_GROUNDSTATE)   { parse_bool(db_metadata.subtract_groundstate); seen_subtract_groundstate = true; }
+        else if (key == RBP_META_IDENTIFIER_ODD)                    { parse_bool(db_metadata.odd);                  seen_odd = true; }
         else if (key == RBP_META_IDENTIFIER_SEQS_SET)               { parse_bool(db_metadata.seqs_set);             seen_seqs_set = true; }
         else if (key == RBP_META_IDENTIFIER_SEQS_CENTERED)          { parse_bool(db_metadata.seqs_centered);        seen_seqs_centered = true; }
         else if (key == RBP_META_IDENTIFIER_CLOSED)                 { parse_bool(db_metadata.closed);               seen_closed = true; }
@@ -340,6 +342,12 @@ void RBPDatabase::parse_file(const std::string &filename)
       error->all(FLERR, "Missing required metadata 'subtract groundstate' in rbp database-file:\n " + filename);
   #else
     if (!seen_subtract_groundstate) db_metadata.subtract_groundstate = RBP_META_DEFAULT_SUBTRACT_GROUNDSTATE;
+  #endif
+  #ifdef RBP_META_REQUIRE_ODD
+    if (!seen_odd)
+      error->all(FLERR, "Missing required metadata 'odd elasticity' in rbp database-file:\n " + filename);
+  #else
+    if (!seen_odd) db_metadata.odd = RBP_META_DEFAULT_ODD;
   #endif
   #ifdef RBP_META_REQUIRE_SEQS_SET
     if (!seen_seqs_set)

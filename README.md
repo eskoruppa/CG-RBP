@@ -29,6 +29,7 @@ handled by the companion Python package
 - [Quick start](#quick-start)
 - [Specifying coefficients](#specifying-coefficients)
 - [Ground-state convention (X vs Y)](#ground-state-convention-x-vs-y)
+- [Odd elasticity (non-Hamiltonian bonds)](#odd-elasticity-non-hamiltonian-bonds)
 - [The auxiliary fix `rbp/lrf`](#the-auxiliary-fix-rbplrf)
 - [Data file format](#data-file-format)
 - [Database (`.db`) file format](#database-db-file-format)
@@ -286,17 +287,22 @@ stiffness entries are given in **row-major** order.
 
 | Style | Argument count | Layout |
 |-------|----------------|--------|
-| `bond rbp`     | **12 / 18 / 27** | 6 ground state + M⁽⁰⁾ as 6 diagonal, 12 block-diagonal, or 21 upper-triangular entries |
-| `bond rbpfene` | **15 / 21 / 30** | 3 FENE (`K Rc R0`) + the 12/18/27 above |
+| `bond rbp`     | **12 / 18 / 27 / 42** | 6 ground state + M⁽⁰⁾ as 6 diagonal, 12 block-diagonal, 21 upper-triangular, or 36 full row-major entries |
+| `bond rbpfene` | **15 / 21 / 30 / 45** | 3 FENE (`K Rc R0`) + the 12/18/27/42 above |
 | `angle rbp`    | **48** | 6 + 6 ground states + full 6×6 block (36 entries) |
 | `dihedral rbp` | **48** | 6 + 6 ground states + full 6×6 block (36 entries) |
 
-The three `M` layouts for bonds are: **diagonal** (6), **block-diagonal**
-(upper-triangular within each 3×3 rotation/translation block, 12), or **full**
-symmetric (upper-triangular of the whole 6×6, 21). The full local block is
-checked to be **positive definite**; a non-PD block aborts the run. Angle and
-dihedral coupling blocks are in general **not symmetric**, so all 36 entries are
+The four `M` layouts for bonds are: **diagonal** (6), **block-diagonal**
+(upper-triangular within each 3×3 rotation/translation block, 12), **full
+symmetric** (upper-triangular of the whole 6×6, 21), or **full row-major** (all
+36 entries). Only the 36-entry layout can be non-symmetric; the first three are
+symmetric by construction. The **symmetric part** of the local block is checked
+to be **positive definite**; a non-PD block aborts the run. Angle and dihedral
+coupling blocks are in general **not symmetric**, so all 36 entries are
 required and no PD check is applied.
+
+A non-symmetric local block means **odd elasticity** and must be declared — see
+[Odd elasticity](#odd-elasticity-non-hamiltonian-bonds).
 
 ### From a database file
 
@@ -330,6 +336,80 @@ by the boolean `subtract_groundstate` (metadata field `subtract groundstate`:
 Inline coefficients always use the **Y** convention. **All interaction types
 sharing a junction must use the same convention** — this is enforced at
 initialisation (see below).
+
+---
+
+## Odd elasticity (non-Hamiltonian bonds)
+
+`bond rbp` and `bond rbpfene` accept a **non-symmetric** local stiffness matrix.
+Splitting $M = M^\mathrm{s} + M^\mathrm{a}$ into symmetric and antisymmetric
+parts, the generalised force is $-M\mathbf{Y}$, which is *not* the gradient of
+any potential once $M^\mathrm{a} \neq 0$. The dynamics are then
+**non-Hamiltonian**: the bond does net work around closed cycles in deformation
+space,
+
+$$W = 2\sum_{i<j} M^\mathrm{a}_{ij}\,A_{ij}$$
+
+with $A_{ij}$ the signed area enclosed in the $(Y_i, Y_j)$ plane. Linear and
+angular momentum are still conserved exactly — only energy is not.
+
+### Declaring it
+
+A non-symmetric matrix requires the **`odd`** keyword, placed directly after the
+type range:
+
+```lammps
+bond_coeff  <type-range> odd <6 ground state> <36 row-major M>
+bond_coeff  <type-range> odd dbfile <file> <start-id>
+```
+
+`odd` is a **permission, not a mode**. It allows a non-symmetric matrix to be
+accepted; whether odd dynamics actually run is decided by the matrix itself. So
+a $k^\mathrm{o} \to 0$ parameter scan needs no syntax change at
+$k^\mathrm{o} = 0$.
+
+| `odd` given | matrix | result |
+|---|---|---|
+| no  | symmetric | ordinary Hamiltonian elasticity |
+| no  | non-symmetric | **error**, naming the offending entry |
+| yes | non-symmetric | odd elasticity, announced at initialisation |
+| yes | symmetric | Hamiltonian, with a warning that `odd` had no effect |
+
+Asymmetry below `RBP_ODD_ASYM_TOL` (`1e-10` relative, in `lamath.h`) counts as
+round-off — the matrix is symmetrized, so noise from e.g. inverting an estimated
+covariance can never leak into the dynamics.
+
+Databases carry an optional metadata field describing their content:
+
+```
+odd elasticity:  1
+```
+
+The field states what the file *contains*; the keyword states what the user
+*intends*. Both must agree, which additionally catches a **mis-generated
+database** — a file declaring itself symmetric but holding an asymmetric block
+is rejected. Databases without the field are treated as symmetric, so existing
+ones are unaffected.
+
+### What changes
+
+- **`E_bond` reports only the even part** $\tfrac12\mathbf{Y}^\intercal M^\mathrm{s}\mathbf{Y}$; the antisymmetric part stores no energy. Total energy is not conserved and will drift.
+- The **positive-definiteness check applies to $M^\mathrm{s}$**, not to $M$.
+- Odd types are announced at initialisation, listing the affected types and $\max|M^\mathrm{a}|$.
+
+### Choosing a thermostat
+
+Underdamped integration is **unstable below a friction threshold** — the
+antisymmetric part pumps energy into every mode. For a mode with even modulus
+$k$, odd modulus $k^\mathrm{o}$ and inertia $m$, marginal stability of
+$m\ddot{x} + \gamma\dot{x} + kx = 0$ with complex $k(1 + i\varepsilon)$,
+$\varepsilon = k^\mathrm{o}/k$, gives
+
+$$\gamma_c = k^\mathrm{o}\sqrt{m/k} \qquad\Longleftrightarrow\qquad T_\mathrm{damp} < \frac{\sqrt{mk}}{k^\mathrm{o}} = \frac{1}{\varepsilon\,\omega_0}$$
+
+so `fix langevin` needs a damping time shorter than that, checked separately for
+translational and rotational modes. `fix nvt` (Nosé–Hoover) is **not** safe
+here: it has no per-mode dissipation floor. Verify stability empirically.
 
 ---
 
@@ -465,14 +545,18 @@ data.
 | `closed` | circular molecule (`1`/`0`) | Yes |
 | `unit length` | length unit (nm) used during generation | Yes |
 | `unit energy` | energy unit (`k_BT`) used during generation (default `1.0`) | No |
+| `odd elasticity` | file contains non-symmetric bond blocks (`1`/`0`, default `0`) | No |
 
 ### Coefficient sections
 
 Each line begins with an integer identifier and lists coefficients in the same
 order as the inline form:
 
-- **`Bond Coeffs`** — `id` + 6 ground state + stiffness (6 / 12 / 21 entries; a
-  full row-major 6×6 = 36 is also accepted by the parser).
+- **`Bond Coeffs`** — `id` + 6 ground state + stiffness (6 / 12 / 21 entries, or
+  a full row-major 6×6 = 36). For `rbpfene` the 3 FENE parameters precede the
+  ground state. A non-symmetric 36-entry block additionally requires
+  `odd elasticity: 1` in the metadata and the `odd` keyword on `bond_coeff`
+  (see [Odd elasticity](#odd-elasticity-non-hamiltonian-bonds)).
 - **`Angle Coeffs` / `Dihedral Coeffs`** — `id` + 6 + 6 ground states + full
   6×6 block (36 entries, row-major).
 
@@ -613,7 +697,10 @@ resolution from coarse beads), and `cgrbptools.visualize`.
   and derived quantities are recomputed on read. The auxiliary `fix rbp/lrf`
   appears in restart files.
 - **`write_data`.** The styles can emit their coefficients into a LAMMPS data
-  file (`id` + 6 ground state + 21 upper-triangular `M` entries for bonds).
+  file (`id` + 6 ground state + 21 upper-triangular `M` entries for bonds; the
+  3 FENE parameters precede the ground state for `rbpfene`). Odd bond types are
+  written as `id odd ...` with all 36 `M` entries, so the file round-trips
+  through `read_data`.
 - **Tuning the parser.** Metadata requirements are compile-time switches
   (`RBP_META_REQUIRE_*` in `parse_rbp.h`); the precompute path can be disabled
   per style via the `*_PRECOMPUTE_ACTIVE` defines in the style headers (falling

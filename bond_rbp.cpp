@@ -45,6 +45,7 @@ using namespace LAMMPS_NS;
 
 BondRBP::BondRBP(LAMMPS *lmp) : Bond(lmp) {
   params = nullptr;
+  odd_requested = false;
 }
 
 /* ----------------------------------------------------------------------
@@ -273,13 +274,16 @@ void BondRBP::compute(int eflag, int vflag) {
 
     if (evflag) {
 
+      // E = 1/2 Y^T M Y. Using (M_ij + M_ji) picks out the symmetric part, so
+      // this is the even (Hamiltonian) energy for any M; the antisymmetric part
+      // stores no energy. Identical bit-for-bit to 2*M_ij when M is symmetric.
       double bond_energy = 0.0;
       const double Yv[6] = {Omd[0], Omd[1], Omd[2], wd[0], wd[1], wd[2]};
       const auto& M = params[bond_type].Mmat;
       for (int i = 0; i < 6; ++i) {
           bond_energy += Yv[i] * M[i][i] * Yv[i];
           for (int j = i + 1; j < 6; ++j) {
-              bond_energy += 2.0 * Yv[i] * M[i][j] * Yv[j];
+              bond_energy += (M[i][j] + M[j][i]) * Yv[i] * Yv[j];
           }
       }
       bond_energy *= 0.5;
@@ -316,40 +320,64 @@ void BondRBP::coeff(int narg, char **arg)
   int ilo, ihi;
   utils::bounds(FLERR, arg[0], 1, atom->nbondtypes, ilo, ihi, error);
 
+  // optional 'odd' keyword: grants permission for a non-symmetric M. It is a
+  // permission, not a mode -- whether odd (non-Hamiltonian) dynamics actually
+  // run is decided by the matrix itself, so a k_odd -> 0 scan needs no syntax
+  // change at k_odd = 0.
+  int iarg = 1;
+  bool odd_permitted = false;
+  if (narg > iarg && strcmp(arg[iarg], "odd") == 0) {
+    odd_permitted = true;
+    odd_requested = true;
+    iarg++;
+  }
+
   // load from database file: keyed on the dbfile keyword (not the arg count) so a
   // mistyped dbfile call reports a useful error instead of "dbfile is not a number"
-  if (narg >= 2 && strcmp(arg[1], "dbfile") == 0) {
-    if (narg != 4)
+  if (narg > iarg && strcmp(arg[iarg], "dbfile") == 0) {
+    if (narg != iarg + 3)
       error->all(FLERR,
-        "Illegal bond_coeff dbfile command: expected '<type> dbfile <filename> <id>'");
+        "Illegal bond_coeff dbfile command: expected '<type> [odd] dbfile <filename> <id>'");
 
 
     RBPDatabase db(lmp, error);
-    db.read(arg[2]);
-    
+    db.read(arg[iarg+1]);
+
     // Validate that bond style in database matches this style
     if (db.metadata().bond_style != RBPBOND_STYLE) {
-      error->all(FLERR, 
-        "Bond style mismatch: database specifies '" + db.metadata().bond_style + 
+      error->all(FLERR,
+        "Bond style mismatch: database specifies '" + db.metadata().bond_style +
         "' but using bond_style rbp");
     }
 
-    int dbid = utils::inumeric(FLERR, arg[3], false, lmp);
+    // Cross-check the database declaration against the command-line permission.
+    // The metadata field describes what the file contains; the keyword states
+    // what the user intends. Both must agree before odd blocks are accepted.
+    if (db.metadata().odd && !odd_permitted)
+      error->all(FLERR, "Database '" + std::string(arg[iarg+1]) + "' declares odd "
+        "(non-symmetric) stiffness blocks. Add the 'odd' keyword to bond_coeff to "
+        "confirm that non-Hamiltonian dynamics are intended.");
+    if (!db.metadata().odd && odd_permitted && comm->me == 0)
+      error->warning(FLERR, "'odd' given but database declares no odd blocks; "
+        "a non-symmetric block would still be rejected");
+
+    const bool permit = odd_permitted && db.metadata().odd;
+    int dbid = utils::inumeric(FLERR, arg[iarg+2], false, lmp);
     for (int bond_type=ilo;bond_type<=ihi;bond_type++) {
-      assign_coeffs(bond_type,db.bond(dbid++).coeffs,db.metadata().subtract_groundstate);
+      assign_coeffs(bond_type,db.bond(dbid++).coeffs,db.metadata().subtract_groundstate,permit);
     }
     return;
   }
-  
+
   // assign from passed args
   std::vector<double> coeffs;
-  coeffs.reserve(narg - 1);
-  for (int i = 1; i < narg; i++) {
-    double val = utils::numeric(FLERR, arg[i], false, lmp);  
+  coeffs.reserve(narg - iarg);
+  for (int i = iarg; i < narg; i++) {
+    double val = utils::numeric(FLERR, arg[i], false, lmp);
     coeffs.push_back(val);
   }
   for (int bond_type=ilo;bond_type<=ihi;bond_type++) {
-    assign_coeffs(bond_type,coeffs,RBP_BOND_DEFAULT_SUBTRACT_GROUNDSTATE);
+    assign_coeffs(bond_type,coeffs,RBP_BOND_DEFAULT_SUBTRACT_GROUNDSTATE,odd_permitted);
   }
 }
 
@@ -371,6 +399,8 @@ void BondRBP::init_style() {
     if (comm->me == 0) error->warning(FLERR, "Use special bonds = 0,x,x with bond style rbp");
   }
 
+  announce_odd_();
+
   #ifdef BOND_RBP_PRECOMPUTE_ACTIVE
   // auto-create or find fix rbp/lrf
   auto fixes = modify->get_fix_by_style("^rbp/lrf");
@@ -387,6 +417,47 @@ void BondRBP::init_style() {
                                       "bond_rbp");
   }
   #endif
+}
+
+/* ----------------------------------------------------------------------
+   Report any odd (non-Hamiltonian) bond types. Running odd elasticity
+   unnoticed should not be possible, so this is unconditional and on stdout.
+------------------------------------------------------------------------- */
+
+void BondRBP::announce_odd_() {
+
+  int n_odd = 0;
+  double max_odd = 0.0;
+  std::string types;
+
+  for (int i = 1; i <= atom->nbondtypes; i++) {
+    if (!setflag[i] || !params[i].odd_active) continue;
+    if (n_odd < 10) types += (n_odd ? "," : "") + std::to_string(i);
+    else if (n_odd == 10) types += ",...";
+    n_odd++;
+    max_odd = std::max(max_odd, lamath::max_odd_modulus(params[i].Mmat));
+  }
+
+  if (n_odd == 0) {
+    // asked for odd, got a symmetric parameter set: say so rather than leaving
+    // the absence of the banner as the only signal
+    if (odd_requested && comm->me == 0)
+      error->warning(FLERR, "'odd' was given on bond_coeff but every stiffness "
+        "matrix is symmetric; dynamics are Hamiltonian");
+    return;
+  }
+
+  if (comm->me == 0)
+    utils::logmesg(lmp,
+      "Bond style rbp: ODD ELASTICITY ACTIVE for {} of {} bond types ({})\n"
+      "  max odd modulus |M^a| = {:.6g}\n"
+      "  Dynamics are non-Hamiltonian: energy is not conserved, and E_bond\n"
+      "  reports only the even part 1/2 Y^T M^s Y.\n"
+      "  Underdamped runs need friction above a threshold. As a guide, a mode\n"
+      "  with even modulus k, odd modulus k_odd and inertia m is unstable\n"
+      "  unless the Langevin damping time obeys T_damp < sqrt(m*k)/k_odd.\n"
+      "  Verify stability empirically.\n",
+      n_odd, atom->nbondtypes, types, max_odd);
 }
 
 
@@ -436,9 +507,12 @@ void BondRBP::read_restart(FILE *fp) {
 
     params[i].subtract_groundstate = (sg != 0);
 
-    // Recompute derived fields from primary state
+    // Recompute derived fields from primary state. Restart state is trusted
+    // (it can only have come from an already-validated coeff call), so
+    // odd_active is recovered from the matrix without requiring the keyword.
     set_static_(i);
     set_equidist(i);
+    params[i].odd_active = (lamath::max_asymmetry(params[i].Mmat) > RBP_ODD_ASYM_TOL);
     assign_blocks_(i);
 
     setflag[i] = 1;
@@ -454,17 +528,27 @@ void BondRBP::write_data(FILE *fp) {
   for (int i = 1; i <= atom->nbondtypes; i++) {
     if (!setflag[i]) continue;
 
-    // type index
+    // type index, followed by the 'odd' keyword for non-symmetric types so the
+    // data file round-trips through read_data (which passes the section line
+    // straight to coeff()). Symmetric types keep the legacy 21-entry output.
     fprintf(fp, "%d", i);
+    if (params[i].odd_active) fprintf(fp, " odd");
 
     // 6 ground-state components (Ystatic)
     for (int k = 0; k < 6; k++)
       fprintf(fp, " %g", params[i].Ystatic[k]);
 
-    // 21 upper-triangular stiffness components (Mmat)
-    for (int r = 0; r < 6; r++)
-      for (int c = r; c < 6; c++)
-        fprintf(fp, " %g", params[i].Mmat[r][c]);
+    if (params[i].odd_active) {
+      // 36 full row-major stiffness components (Mmat)
+      for (int r = 0; r < 6; r++)
+        for (int c = 0; c < 6; c++)
+          fprintf(fp, " %g", params[i].Mmat[r][c]);
+    } else {
+      // 21 upper-triangular stiffness components (Mmat)
+      for (int r = 0; r < 6; r++)
+        for (int c = r; c < 6; c++)
+          fprintf(fp, " %g", params[i].Mmat[r][c]);
+    }
 
     fprintf(fp, "\n");
   }
@@ -485,29 +569,34 @@ void BondRBP::allocate() {
 }
 
 
-void BondRBP::assign_coeffs(int bond_type, const std::vector<double> &args, bool subtract_groundstate) {
+void BondRBP::assign_coeffs(int bond_type, const std::vector<double> &args, bool subtract_groundstate,
+                            bool odd_permitted) {
   // ------------------------------------------------------------
   // Inline numeric definitions (legacy / TWLC / full RBP)
   // Supported forms:
   //   6 + 6  = 12 args (diagonal M)
   //   6 + 12 = 18 args (block-diagonal M)
   //   6 + 21 = 27 args (full upper-triangular M)
+  //   6 + 36 = 42 args (full row-major M, may be non-symmetric)
   //
-  // these are the arguments following the leading bond_type id
+  // these are the arguments following the leading bond_type id (and the
+  // optional 'odd' keyword, which coeff() consumes before this point)
   // ------------------------------------------------------------
   constexpr int opt1 = 12;
   constexpr int opt2 = 18;
   constexpr int opt3 = 27;
+  constexpr int opt4 = 42;
 
   int narg = static_cast<int>(args.size());
 
-  if (narg != opt1 && narg != opt2 && narg != opt3) {
+  if (narg != opt1 && narg != opt2 && narg != opt3 && narg != opt4) {
     std::string msg =
       "Incorrect number of arguments for bond_coeff (" + std::to_string(narg) + ")\n" +
       "Expected:\n" +
       "  6+6  (6 groundstate and 6 diagonal components of M)\n" +
       "  6+12 (6 groundstate and block-diagonal M: Upper triangular assignment for each 3x3 block. Assignment by first iterating through the rows)\n" +
-      "  6+21 (6 groundstate and full symmetric M assignment. Assignment by first iterating through the rows)";
+      "  6+21 (6 groundstate and full symmetric M assignment. Assignment by first iterating through the rows)\n" +
+      "  6+36 (6 groundstate and full row-major M, may be non-symmetric; requires the 'odd' keyword)";
     error->all(FLERR, msg.c_str());
   }
 
@@ -556,14 +645,50 @@ void BondRBP::assign_coeffs(int bond_type, const std::vector<double> &args, bool
         params[bond_type].Mmat[i][j] = args[k++];
   }
 
-  set_lower_triangle_(bond_type);
+  // -------------------------------------------------------------------
+  // full row-major assignment; the only layout that can be non-symmetric
+  if (narg == opt4) {
+    int k = 6;
+    for (int i = 0; i < 6; i++)
+      for (int j = 0; j < 6; j++)
+        params[bond_type].Mmat[i][j] = args[k++];
+  }
+
+  if (narg != opt4) set_lower_triangle_(bond_type);
+  check_symmetry_(bond_type, odd_permitted);
   assign_blocks_(bond_type);
 
   if (!lamath::is_positive_definite(params[bond_type].Mmat)) {
-    error->all(FLERR, "Stiffness matrix M is not positive definite");
+    error->all(FLERR, "Symmetric part of stiffness matrix M is not positive definite");
   }
-  
+
   setflag[bond_type] = 1;
+}
+
+/* ----------------------------------------------------------------------
+   Decide whether this type runs odd (non-Hamiltonian) dynamics.
+   Sub-tolerance asymmetry is round-off and is symmetrized away, so it can
+   never leak into the dynamics. Genuine asymmetry requires explicit consent.
+------------------------------------------------------------------------- */
+
+void BondRBP::check_symmetry_(int bond_type, bool odd_permitted) {
+  int i = 0, j = 0;
+  const double asym = lamath::max_asymmetry(params[bond_type].Mmat, &i, &j);
+
+  if (asym <= RBP_ODD_ASYM_TOL) {
+    lamath::symmetrize(params[bond_type].Mmat);
+    params[bond_type].odd_active = false;
+    return;
+  }
+
+  if (!odd_permitted)
+    error->all(FLERR, "Stiffness matrix M for bond type {} is not symmetric "
+      "(relative asymmetry {:.3g} at entry ({},{}): {:.6g} vs {:.6g}). If odd "
+      "elasticity is intended, declare it with the 'odd' keyword on bond_coeff "
+      "(and 'odd elasticity: 1' in the database header when reading a database).",
+      bond_type, asym, i, j, params[bond_type].Mmat[i][j], params[bond_type].Mmat[j][i]);
+
+  params[bond_type].odd_active = true;
 }
 
 void BondRBP::set_static_(int bond_type) {
